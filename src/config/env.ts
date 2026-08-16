@@ -9,6 +9,16 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  JWT_ACCESS_SECRET: z.string().min(32).optional(),
+  JWT_REFRESH_SECRET: z.string().min(32).optional(),
+  ACCESS_TOKEN_TTL: z.string().default('15m'),
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
+  OTP_TTL_MINUTES: z.coerce.number().int().min(1).max(60).default(10),
+  RESEND_API_KEY: z.string().min(1).optional(),
+  RESEND_FROM_EMAIL: z.string().email().optional(),
+  ADMIN_EMAIL: z.string().email().optional(),
+  ADMIN_PASSWORD: z.string().min(8).optional(),
+  ADMIN_NAME: z.string().min(1).max(255).default('Lumify Admin'),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -20,6 +30,25 @@ if (!parsed.success) {
   throw new Error(`Invalid environment configuration: ${issues}`);
 }
 
-export const env = parsed.data;
+const developmentSecret = 'development-only-secret-change-before-production-0000';
+
+if (parsed.data.NODE_ENV === 'production') {
+  for (const key of [
+    'JWT_ACCESS_SECRET',
+    'JWT_REFRESH_SECRET',
+    'RESEND_API_KEY',
+    'RESEND_FROM_EMAIL',
+  ] as const) {
+    if (!parsed.data[key]) {
+      throw new Error(`Invalid environment configuration: ${key} is required in production`);
+    }
+  }
+}
+
+export const env = {
+  ...parsed.data,
+  JWT_ACCESS_SECRET: parsed.data.JWT_ACCESS_SECRET ?? developmentSecret,
+  JWT_REFRESH_SECRET: parsed.data.JWT_REFRESH_SECRET ?? developmentSecret,
+};
 
 export const corsOrigins = env.CORS_ORIGIN.split(',').map((origin) => origin.trim());

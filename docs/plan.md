@@ -166,7 +166,7 @@ Implemented the Fastify/TypeScript application foundation, Prisma schema and ini
 
 ---
 
-# Phase 2 — Authentication, users, and configuration
+# Phase 2 — Authentication, users, and configuration — ✅ Completed (2026-08-16)
 
 The SRS requires registration, OTP verification, login, forgot password, profile management, and password changes.  
 
@@ -225,6 +225,10 @@ Run journey tests covering:
 * phone requirement
 * payment-method management
 * role authorization
+
+### Completion record
+
+Implemented OTP registration/verification and password-reset flows through Resend, hashed password and OTP storage, JWT access tokens with rotated HttpOnly refresh sessions, profile APIs, `ADMIN`/`STUDENT` guards, environment-based admin bootstrap, and payment-method CRUD. OTPs are returned only in development/test responses (and test mode makes no outbound email request). Verified API journeys against PostgreSQL.
 
 ---
 

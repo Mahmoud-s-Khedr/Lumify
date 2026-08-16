@@ -1,33 +1,23 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { buildApp } from '../src/app/app.js';
+import { api } from './http.js';
 
-describe('GET /health', () => {
-  let app: Awaited<ReturnType<typeof buildApp>>;
-
-  afterEach(async () => {
-    await app?.close();
-  });
-
+describe('running backend health and docs', () => {
   it('returns service health', async () => {
-    app = await buildApp();
+    const response = await api<{ status: string }>('/health');
 
-    const response = await app.inject({ method: 'GET', url: '/health' });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ status: 'ok' });
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ status: 'ok' });
   });
 
   it('serves Swagger UI and generated OpenAPI documentation', async () => {
-    app = await buildApp();
-
     const [docs, openapi] = await Promise.all([
-      app.inject({ method: 'GET', url: '/docs/' }),
-      app.inject({ method: 'GET', url: '/docs/json' }),
+      api('/docs/'),
+      api<{ openapi: string }>('/docs/json'),
     ]);
 
-    expect(docs.statusCode).toBe(200);
-    expect(openapi.statusCode).toBe(200);
-    expect(openapi.json()).toMatchObject({ openapi: '3.0.3' });
+    expect(docs.status).toBe(200);
+    expect(openapi.status).toBe(200);
+    expect(openapi.body).toMatchObject({ openapi: '3.0.3' });
   });
 });

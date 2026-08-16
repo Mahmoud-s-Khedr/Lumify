@@ -20,7 +20,7 @@ The application foundation is in place:
 - Health endpoint and generated OpenAPI/Swagger UI
 - Docker image, Docker Compose configuration, and GitHub Actions verification
 
-The product modules (authentication, courses, bookings, payments, materials, and sessions) are planned but not implemented yet. See [docs/plan.md](docs/plan.md) for the roadmap and [docs/schema.md](docs/schema.md) for the database design.
+Authentication, profiles, role authorization, refresh sessions, transactional OTP delivery, and payment-method management are implemented. Course, booking, payment-review, file, and session modules remain on the roadmap. See [docs/plan.md](docs/plan.md) for the roadmap and [docs/schema.md](docs/schema.md) for the database design.
 
 ## Prerequisites
 
@@ -72,26 +72,39 @@ docker compose down --volumes
 
 ## Environment variables
 
-| Variable              | Default                 | Purpose                                                              |
-| --------------------- | ----------------------- | -------------------------------------------------------------------- |
-| `NODE_ENV`            | `development`           | Application environment: `development`, `test`, or `production`.     |
-| `HOST`                | `0.0.0.0`               | Interface on which Fastify listens.                                  |
-| `PORT`                | `3000`                  | HTTP port.                                                           |
-| `DATABASE_URL`        | —                       | PostgreSQL connection URL. Required outside Docker Compose defaults. |
-| `LOG_LEVEL`           | `info`                  | Pino log level.                                                      |
-| `CORS_ORIGIN`         | `http://localhost:5173` | Comma-separated allowed browser origins.                             |
-| `DATABASE_URL_DOCKER` | Compose database URL    | Overrides the API database URL used by Docker Compose.               |
-| `POSTGRES_PORT`       | `5432`                  | Host port exposed for PostgreSQL by Docker Compose.                  |
+| Variable                 | Default                 | Purpose                                                              |
+| ------------------------ | ----------------------- | -------------------------------------------------------------------- |
+| `NODE_ENV`               | `development`           | Application environment: `development`, `test`, or `production`.     |
+| `HOST`                   | `0.0.0.0`               | Interface on which Fastify listens.                                  |
+| `PORT`                   | `3000`                  | HTTP port.                                                           |
+| `DATABASE_URL`           | —                       | PostgreSQL connection URL. Required outside Docker Compose defaults. |
+| `LOG_LEVEL`              | `info`                  | Pino log level.                                                      |
+| `CORS_ORIGIN`            | `http://localhost:5173` | Comma-separated allowed browser origins.                             |
+| `JWT_ACCESS_SECRET`      | Development-only value  | At least 32 characters; required in production.                      |
+| `JWT_REFRESH_SECRET`     | Development-only value  | At least 32 characters; required in production.                      |
+| `ACCESS_TOKEN_TTL`       | `15m`                   | Access-token lifetime.                                               |
+| `REFRESH_TOKEN_TTL_DAYS` | `30`                    | Rotated refresh-session lifetime.                                    |
+| `OTP_TTL_MINUTES`        | `10`                    | Email-verification/reset OTP lifetime.                               |
+| `RESEND_API_KEY`         | —                       | Resend credential; required in production.                           |
+| `RESEND_FROM_EMAIL`      | —                       | Verified Resend sender; required in production.                      |
+| `ADMIN_EMAIL`            | —                       | Optional idempotent bootstrap-admin email.                           |
+| `ADMIN_PASSWORD`         | —                       | Bootstrap-admin password (8+ characters).                            |
+| `ADMIN_NAME`             | `Lumify Admin`          | Bootstrap-admin display name.                                        |
+| `DATABASE_URL_DOCKER`    | Compose database URL    | Overrides the API database URL used by Docker Compose.               |
+| `POSTGRES_PORT`          | `5432`                  | Host port exposed for PostgreSQL by Docker Compose.                  |
 
 Never commit `.env`; use `.env.example` as the template.
 
 ## API documentation
 
-| Endpoint      | Description                                      |
-| ------------- | ------------------------------------------------ |
-| `GET /health` | Returns the service health and timestamp.        |
-| `/docs/`      | Swagger UI generated from Fastify route schemas. |
-| `/docs/json`  | OpenAPI JSON document.                           |
+| Endpoint           | Description                                                          |
+| ------------------ | -------------------------------------------------------------------- |
+| `GET /health`      | Returns the service health and timestamp.                            |
+| `/docs/`           | Swagger UI generated from Fastify route schemas.                     |
+| `/docs/json`       | OpenAPI JSON document.                                               |
+| `/auth/*`          | Registration, OTP verification, login, sessions, and password flows. |
+| `/users/me`        | Read and update the authenticated user profile.                      |
+| `/payment-methods` | Authenticated listing and admin management.                          |
 
 ## Commands
 

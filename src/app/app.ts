@@ -1,5 +1,7 @@
 import cors from '@fastify/cors';
+import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
+import jwt from '@fastify/jwt';
 import sensible from '@fastify/sensible';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
@@ -8,6 +10,9 @@ import Fastify from 'fastify';
 
 import { AppError } from '../common/errors/app-error.js';
 import { corsOrigins, env } from '../config/env.js';
+import { authRoutes } from '../modules/auth/routes.js';
+import { paymentMethodRoutes } from '../modules/payment-methods/routes.js';
+import { userRoutes } from '../modules/users/routes.js';
 
 const healthResponseSchema = {
   type: 'object',
@@ -35,6 +40,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   await app.register(sensible);
+  await app.register(cookie);
+  await app.register(jwt, { secret: env.JWT_ACCESS_SECRET });
   await app.register(cors, {
     origin: corsOrigins.length === 1 ? corsOrigins[0] : corsOrigins,
     credentials: true,
@@ -66,6 +73,10 @@ export async function buildApp(): Promise<FastifyInstance> {
     },
     async () => ({ status: 'ok', timestamp: new Date().toISOString() }),
   );
+
+  await app.register(authRoutes);
+  await app.register(userRoutes);
+  await app.register(paymentMethodRoutes);
 
   app.setNotFoundHandler((request, reply) => {
     return reply.code(404).send({

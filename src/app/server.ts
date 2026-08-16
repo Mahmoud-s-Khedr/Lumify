@@ -1,12 +1,14 @@
 import { buildApp } from './app.js';
 import { env } from '../config/env.js';
 import { prisma } from '../infrastructure/database/prisma.js';
+import { bootstrapAdmin } from '../modules/auth/service.js';
 
 const app = await buildApp();
 
 async function start(): Promise<void> {
   try {
     await prisma.$connect();
+    await bootstrapAdmin();
     await app.listen({ host: env.HOST, port: env.PORT });
   } catch (error) {
     app.log.fatal(error, 'Unable to start Lumify API');
