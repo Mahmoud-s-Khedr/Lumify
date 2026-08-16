@@ -1,0 +1,222 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  STUDENT
+
+  @@map("user_role")
+}
+
+enum AuthTokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+
+  @@map("auth_token_type")
+}
+
+enum Weekday {
+  SATURDAY
+  SUNDAY
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+
+  @@map("weekday")
+}
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  PENDING_REVIEW
+  CONFIRMED
+  PAYMENT_REJECTED
+  CANCELLATION_REQUESTED
+  CANCELLED
+
+  @@map("booking_status")
+}
+
+model User {
+  id            BigInt   @id @default(autoincrement())
+  name          String   @db.VarChar(255)
+  email         String   @unique @db.VarChar(255)
+  phone         String?  @db.VarChar(50)
+  contactInfo   Json?    @map("contact_info")
+  passwordHash  String   @map("password_hash")
+  role          UserRole @default(STUDENT)
+  emailVerified Boolean  @default(false) @map("email_verified")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  authTokens AuthToken[]
+  files      File[]      @relation("UploadedFiles")
+  bookings   Booking[]
+
+  @@map("users")
+}
+
+model AuthToken {
+  id        BigInt        @id @default(autoincrement())
+  userId    BigInt        @map("user_id")
+  type      AuthTokenType
+  tokenHash String        @map("token_hash")
+  expiresAt DateTime      @map("expires_at")
+  createdAt DateTime      @default(now()) @map("created_at")
+  user      User          @relation(fields: [userId], references: [id])
+
+  @@index([userId, type])
+  @@map("auth_tokens")
+}
+
+model File {
+  id           BigInt   @id @default(autoincrement())
+  storageKey   String   @map("storage_key")
+  originalName String   @map("original_name")
+  mimeType     String?  @map("mime_type") @db.VarChar(255)
+  sizeBytes    BigInt?  @map("size_bytes")
+  uploadedById BigInt?  @map("uploaded_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+  uploadedBy   User?    @relation("UploadedFiles", fields: [uploadedById], references: [id])
+  courseImages CourseImage[]
+  materials    RoundMaterial[]
+  receipts     Booking[] @relation("ReceiptFile")
+
+  @@unique([storageKey])
+  @@map("files")
+}
+
+model PaymentMethod {
+  key      String    @id @db.VarChar(100)
+  value    String
+  bookings Booking[]
+
+  @@map("payment_methods")
+}
+
+model Course {
+  id                   BigInt        @id @default(autoincrement())
+  title                String        @db.VarChar(255)
+  description          String?
+  price                Decimal       @db.Decimal(10, 2)
+  outcomes             Json?
+  skills               Json?
+  prerequisiteSkills   Json?         @map("prerequisite_skills")
+  prerequisiteCourseId BigInt?       @map("prerequisite_course_id")
+  demoVideoUrl         String?       @map("demo_video_url")
+  archived             Boolean       @default(false)
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @default(now()) @updatedAt @map("updated_at")
+  prerequisiteCourse   Course?       @relation("CoursePrerequisite", fields: [prerequisiteCourseId], references: [id])
+  dependentCourses     Course[]      @relation("CoursePrerequisite")
+  images               CourseImage[]
+  rounds               CourseRound[]
+
+  @@index([archived])
+  @@map("courses")
+}
+
+model CourseImage {
+  id        BigInt   @id @default(autoincrement())
+  courseId  BigInt   @map("course_id")
+  fileId    BigInt   @map("file_id")
+  sortOrder Int?     @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  course    Course   @relation(fields: [courseId], references: [id])
+  file      File     @relation(fields: [fileId], references: [id])
+
+  @@unique([courseId, fileId])
+  @@index([courseId, sortOrder])
+  @@map("course_images")
+}
+
+model CourseRound {
+  id                  BigInt          @id @default(autoincrement())
+  courseId            BigInt          @map("course_id")
+  startDate           DateTime        @db.Date @map("start_date")
+  endDate             DateTime        @db.Date @map("end_date")
+  capacity            Int
+  liveJoinUrl         String?         @map("live_join_url")
+  whatsappUrl         String?         @map("whatsapp_url")
+  joiningInstructions String?         @map("joining_instructions")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @default(now()) @updatedAt @map("updated_at")
+  course              Course          @relation(fields: [courseId], references: [id])
+  schedules           RoundSchedule[]
+  materials           RoundMaterial[]
+  bookings            Booking[]
+  sessions            Session[]
+
+  @@index([courseId, startDate])
+  @@map("course_rounds")
+}
+
+model RoundSchedule {
+  id        BigInt      @id @default(autoincrement())
+  roundId   BigInt      @map("round_id")
+  weekday   Weekday
+  startTime DateTime    @db.Time(0) @map("start_time")
+  createdAt DateTime    @default(now()) @map("created_at")
+  round     CourseRound @relation(fields: [roundId], references: [id])
+
+  @@unique([roundId, weekday])
+  @@map("round_schedules")
+}
+
+model RoundMaterial {
+  id          BigInt      @id @default(autoincrement())
+  roundId     BigInt      @map("round_id")
+  title       String      @db.VarChar(255)
+  fileId      BigInt?     @map("file_id")
+  externalUrl String?     @map("external_url")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  round       CourseRound @relation(fields: [roundId], references: [id])
+  file        File?       @relation(fields: [fileId], references: [id])
+
+  @@map("round_materials")
+}
+
+model Booking {
+  id               BigInt        @id @default(autoincrement())
+  studentId        BigInt        @map("student_id")
+  roundId          BigInt        @map("round_id")
+  price            Decimal       @db.Decimal(10, 2)
+  status           BookingStatus @default(PENDING_PAYMENT)
+  paymentMethodKey String?       @map("payment_method_key") @db.VarChar(100)
+  receiptFileId    BigInt?       @map("receipt_file_id")
+  adminNote        String?       @map("admin_note")
+  reviewedAt       DateTime?     @map("reviewed_at")
+  cancellationReason String?     @map("cancellation_reason")
+  cancelledAt      DateTime?     @map("cancelled_at")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @default(now()) @updatedAt @map("updated_at")
+  student          User          @relation(fields: [studentId], references: [id])
+  round            CourseRound   @relation(fields: [roundId], references: [id])
+  paymentMethod    PaymentMethod? @relation(fields: [paymentMethodKey], references: [key])
+  receiptFile      File?         @relation("ReceiptFile", fields: [receiptFileId], references: [id])
+
+  @@unique([studentId, roundId])
+  @@index([roundId, status])
+  @@map("bookings")
+}
+
+model Session {
+  id           BigInt      @id @default(autoincrement())
+  roundId      BigInt      @map("round_id")
+  title        String      @db.VarChar(255)
+  sessionDate  DateTime    @map("session_date")
+  recordingUrl String?     @map("recording_url")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @default(now()) @updatedAt @map("updated_at")
+  round        CourseRound @relation(fields: [roundId], references: [id])
+
+  @@index([roundId, sessionDate])
+  @@map("sessions")
+}
