@@ -12,6 +12,8 @@ import { AppError } from '../common/errors/app-error.js';
 import { corsOrigins, env } from '../config/env.js';
 import { authRoutes } from '../modules/auth/routes.js';
 import { paymentMethodRoutes } from '../modules/payment-methods/routes.js';
+import { courseRoutes } from '../modules/courses/routes.js';
+import { fileRoutes } from '../modules/files/routes.js';
 import { userRoutes } from '../modules/users/routes.js';
 
 const healthResponseSchema = {
@@ -77,6 +79,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(authRoutes);
   await app.register(userRoutes);
   await app.register(paymentMethodRoutes);
+  await app.register(fileRoutes);
+  await app.register(courseRoutes);
 
   app.setNotFoundHandler((request, reply) => {
     return reply.code(404).send({

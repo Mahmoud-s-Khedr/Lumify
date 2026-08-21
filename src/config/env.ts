@@ -16,6 +16,11 @@ const envSchema = z.object({
   OTP_TTL_MINUTES: z.coerce.number().int().min(1).max(60).default(10),
   RESEND_API_KEY: z.string().min(1).optional(),
   RESEND_FROM_EMAIL: z.string().email().optional(),
+  R2_ACCOUNT_ID: z.string().min(1).optional(),
+  R2_BUCKET_NAME: z.string().min(1).optional(),
+  R2_ACCESS_KEY_ID: z.string().min(1).optional(),
+  R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  R2_PRESIGNED_URL_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
   ADMIN_EMAIL: z.string().email().optional(),
   ADMIN_PASSWORD: z.string().min(8).optional(),
   ADMIN_NAME: z.string().min(1).max(255).default('Lumify Admin'),
@@ -38,6 +43,10 @@ if (parsed.data.NODE_ENV === 'production') {
     'JWT_REFRESH_SECRET',
     'RESEND_API_KEY',
     'RESEND_FROM_EMAIL',
+    'R2_ACCOUNT_ID',
+    'R2_BUCKET_NAME',
+    'R2_ACCESS_KEY_ID',
+    'R2_SECRET_ACCESS_KEY',
   ] as const) {
     if (!parsed.data[key]) {
       throw new Error(`Invalid environment configuration: ${key} is required in production`);

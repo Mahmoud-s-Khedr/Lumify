@@ -232,7 +232,7 @@ Implemented OTP registration/verification and password-reset flows through Resen
 
 ---
 
-# Phase 3 — Files and courses
+# Phase 3 — Files and courses — ✅ Completed (2026-08-20)
 
 The SRS requires course information, multiple images, prerequisite information and an external demo video. 
 
@@ -314,6 +314,10 @@ Run journeys for:
 * archive
 * search
 * unauthorized course management
+
+### Completion record
+
+Implemented private Cloudflare R2-compatible signed uploads and authorized downloads for course images, including JPEG/PNG/WebP validation and a 50 MB limit. Implemented course creation, editing, image ordering, archiving, guarded deletion, prerequisite validation, external demo-video URLs, and the public searchable course catalogue. Verified Phase 3 journeys alongside existing authentication and health tests.
 
 ---
 
