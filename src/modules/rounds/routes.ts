@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
 import { requireAdmin, requireUser } from '../../common/authorization/auth.js';
+import { courseAccessStatuses } from '../../common/business/bookings.js';
 import { AppError } from '../../common/errors/app-error.js';
 import { parseRequest } from '../../common/validation/request.js';
 import { prisma } from '../../infrastructure/database/prisma.js';
@@ -172,18 +173,29 @@ async function requireVisibleRound(request: FastifyRequest, id: bigint): Promise
   return round;
 }
 
-async function lockEditableRound(tx: Prisma.TransactionClient, roundId: bigint): Promise<void> {
+async function lockRound(tx: Prisma.TransactionClient, roundId: bigint): Promise<void> {
   const rows = await tx.$queryRaw<Array<{ id: bigint }>>`
     SELECT id FROM course_rounds WHERE id = ${roundId} FOR UPDATE
   `;
   if (rows.length === 0) throw new AppError(404, 'Round was not found.', 'ROUND_NOT_FOUND');
+}
+
+async function requireRoundWithoutBookings(
+  tx: Prisma.TransactionClient,
+  roundId: bigint,
+): Promise<void> {
   const bookings = await tx.booking.count({ where: { roundId } });
   if (bookings > 0)
     throw new AppError(
       409,
-      'A round with bookings cannot be changed or deleted.',
+      'A round with bookings cannot have its dates or schedule changed or be deleted.',
       'ROUND_HAS_BOOKINGS',
     );
+}
+
+async function lockEditableRound(tx: Prisma.TransactionClient, roundId: bigint): Promise<void> {
+  await lockRound(tx, roundId);
+  await requireRoundWithoutBookings(tx, roundId);
 }
 
 async function validateMaterialFile(fileId: bigint, uploaderId: bigint): Promise<File> {
@@ -213,7 +225,11 @@ async function requireMaterialAccess(request: FastifyRequest, roundId: bigint): 
   const identity = await requireUser(request);
   if (identity.role === 'ADMIN') return;
   const confirmed = await prisma.booking.count({
-    where: { roundId, studentId: BigInt(identity.sub), status: 'CONFIRMED' },
+    where: {
+      roundId,
+      studentId: BigInt(identity.sub),
+      status: { in: courseAccessStatuses },
+    },
   });
   if (confirmed === 0)
     throw new AppError(
@@ -286,14 +302,21 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch(
     '/rounds/:id',
-    { schema: { tags: ['Rounds'], summary: 'Update a round that has no bookings' } },
+    {
+      schema: {
+        tags: ['Rounds'],
+        summary: 'Update round dates before enrollment or capacity at any time',
+      },
+    },
     async (request) => {
       await requireAdmin(request);
       const params = parseRequest(roundParamsSchema, request.params);
       const body = parseRequest(updateRoundSchema, request.body);
       const roundId = BigInt(params.id);
       const round = await prisma.$transaction(async (tx) => {
-        await lockEditableRound(tx, roundId);
+        await lockRound(tx, roundId);
+        if (body.startDate !== undefined || body.endDate !== undefined)
+          await requireRoundWithoutBookings(tx, roundId);
         const current = await tx.courseRound.findUniqueOrThrow({ where: { id: roundId } });
         const startDate = body.startDate ? inputDate(body.startDate) : current.startDate;
         const endDate = body.endDate ? inputDate(body.endDate) : current.endDate;

@@ -10,12 +10,14 @@ import Fastify from 'fastify';
 
 import { AppError } from '../common/errors/app-error.js';
 import { corsOrigins, env } from '../config/env.js';
+import { prisma } from '../infrastructure/database/prisma.js';
 import { authRoutes } from '../modules/auth/routes.js';
 import { bookingRoutes } from '../modules/bookings/routes.js';
 import { paymentMethodRoutes } from '../modules/payment-methods/routes.js';
 import { courseRoutes } from '../modules/courses/routes.js';
 import { fileRoutes } from '../modules/files/routes.js';
 import { roundRoutes } from '../modules/rounds/routes.js';
+import { sessionRoutes } from '../modules/sessions/routes.js';
 import { userRoutes } from '../modules/users/routes.js';
 
 const healthResponseSchema = {
@@ -30,6 +32,7 @@ const healthResponseSchema = {
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
+    trustProxy: env.TRUST_PROXY,
     logger: {
       level: env.LOG_LEVEL,
       ...(env.NODE_ENV === 'development'
@@ -78,6 +81,36 @@ export async function buildApp(): Promise<FastifyInstance> {
     async () => ({ status: 'ok', timestamp: new Date().toISOString() }),
   );
 
+  app.get(
+    '/ready',
+    {
+      schema: {
+        tags: ['System'],
+        summary: 'Application readiness check',
+        response: {
+          200: healthResponseSchema,
+          503: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['status', 'timestamp'],
+            properties: {
+              status: { type: 'string', enum: ['unavailable'] },
+              timestamp: { type: 'string', format: 'date-time' },
+            },
+          },
+        },
+      },
+    },
+    async (_request, reply) => {
+      try {
+        await prisma.$queryRaw`SELECT 1`;
+        return { status: 'ok', timestamp: new Date().toISOString() };
+      } catch {
+        return reply.code(503).send({ status: 'unavailable', timestamp: new Date().toISOString() });
+      }
+    },
+  );
+
   app.setNotFoundHandler((request, reply) => {
     return reply.code(404).send({
       error: 'NOT_FOUND',
@@ -113,6 +146,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(courseRoutes);
   await app.register(roundRoutes);
   await app.register(bookingRoutes);
+  await app.register(sessionRoutes);
 
   return app;
 }

@@ -13,7 +13,7 @@ type PublicBooking = {
   status: BookingStatus;
   bookingState: string;
   paymentMethod: { key: string; value: string } | null;
-  receipt: { id: string; downloadUrl: string } | null;
+  receipt: { id: string; mimeType: string; downloadUrl: string } | null;
   adminNote: string | null;
   round: {
     id: string;
@@ -97,14 +97,18 @@ describe('Phase 5 booking and manual-payment journeys', () => {
     return { course, round };
   }
 
-  async function uploadReceipt(headers: Headers, originalName: string): Promise<string> {
+  async function uploadReceipt(
+    headers: Headers,
+    originalName: string,
+    mimeType = 'image/png',
+  ): Promise<string> {
     const permission = await api<{ storageKey: string; maxSizeBytes: number }>('/files/uploads', {
       method: 'POST',
       headers,
       body: JSON.stringify({
         kind: 'PAYMENT_RECEIPT',
         originalName,
-        mimeType: 'image/png',
+        mimeType,
       }),
     });
     expect(permission.status).toBe(201);
@@ -117,7 +121,7 @@ describe('Phase 5 booking and manual-payment journeys', () => {
         kind: 'PAYMENT_RECEIPT',
         storageKey: permission.body.storageKey,
         originalName,
-        mimeType: 'image/png',
+        mimeType,
       }),
     });
     expect(completed.status).toBe(201);
@@ -141,6 +145,21 @@ describe('Phase 5 booking and manual-payment journeys', () => {
         login(studentWithoutPhone),
       ]);
     const { course, round } = await createCourseAndRound(2);
+
+    const startedRound = await prisma.courseRound.create({
+      data: {
+        courseId: course.id,
+        startDate: dateOffset(0),
+        endDate: dateOffset(5),
+        capacity: 5,
+      },
+    });
+    const startedBooking = await api(`/rounds/${startedRound.id.toString()}/bookings`, {
+      method: 'POST',
+      headers: studentAHeaders,
+    });
+    expect(startedBooking.status).toBe(409);
+    expect(startedBooking.body).toMatchObject({ error: 'ROUND_ALREADY_STARTED' });
 
     const capacityBeforeEnrollment = await api<{ round: { capacity: number } }>(
       `/rounds/${round.id.toString()}`,
@@ -196,13 +215,25 @@ describe('Phase 5 booking and manual-payment journeys', () => {
       headers: adminHeaders,
       body: JSON.stringify({ capacity: 2 }),
     });
-    expect(capacityAfterEnrollment.status).toBe(409);
-    expect(capacityAfterEnrollment.body).toMatchObject({ error: 'ROUND_HAS_BOOKINGS' });
+    expect(capacityAfterEnrollment.status).toBe(200);
+    expect(capacityAfterEnrollment.body).toMatchObject({ round: { capacity: 2 } });
 
-    await prisma.booking.update({
-      where: { id: BigInt(bookedA.body.booking.id) },
+    await prisma.booking.updateMany({
+      where: {
+        id: { in: [BigInt(bookedA.body.booking.id), BigInt(bookedB.body.booking.id)] },
+      },
       data: { status: 'CONFIRMED' },
     });
+    const lowerCapacity = await api(`/rounds/${round.id.toString()}`, {
+      method: 'PATCH',
+      headers: adminHeaders,
+      body: JSON.stringify({ capacity: 1 }),
+    });
+    expect(lowerCapacity.status).toBe(200);
+    expect(lowerCapacity.body).toMatchObject({ round: { capacity: 1 } });
+    expect(await prisma.booking.count({ where: { roundId: round.id, status: 'CONFIRMED' } })).toBe(
+      2,
+    );
     const full = await api(`/rounds/${round.id.toString()}/bookings`, {
       method: 'POST',
       headers: studentCHeaders,
@@ -231,7 +262,11 @@ describe('Phase 5 booking and manual-payment journeys', () => {
       `/rounds/${round.id.toString()}/bookings`,
       { method: 'POST', headers: studentHeaders },
     );
-    const firstReceiptId = await uploadReceipt(studentHeaders, 'first-receipt.png');
+    const firstReceiptId = await uploadReceipt(
+      studentHeaders,
+      'first-receipt.pdf',
+      'application/pdf',
+    );
     const submitted = await api<{ booking: PublicBooking }>(
       `/bookings/${booked.body.booking.id}/payment`,
       {
@@ -244,7 +279,7 @@ describe('Phase 5 booking and manual-payment journeys', () => {
     expect(submitted.body.booking).toMatchObject({
       status: 'PENDING_REVIEW',
       paymentMethod: { key: 'INSTAPAY', value: 'instapay-old@example.com' },
-      receipt: { id: firstReceiptId },
+      receipt: { id: firstReceiptId, mimeType: 'application/pdf' },
     });
 
     await prisma.paymentMethod.update({

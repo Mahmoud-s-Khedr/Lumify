@@ -239,12 +239,7 @@ Student:
 PENDING_REVIEW
 ```
 
-The receipt may be:
-
-* image
-* screenshot
-* PDF
-* other allowed document
+The receipt can be an image, PDF, or other document MIME type up to 10 MB.
 
 ---
 
@@ -368,32 +363,12 @@ This operation must be transactional so two simultaneous approvals cannot exceed
 
 ## 15. Capacity modification
 
-Admin can change capacity at any time.
+Capacity can be raised or lowered at any time. Any booking, including a pending request, still
+locks the round dates and weekly schedule. Materials and external links remain editable after
+enrollment.
 
-For example:
-
-```text
-40 → 50
-40 → 100
-40 → 20
-```
-
-If:
-
-```text
-confirmed = 30
-capacity changes to 20
-```
-
-the existing 30 students remain enrolled.
-
-The system simply reports:
-
-```text
-available = 0
-```
-
-and prevents further approvals/applications until capacity is increased enough.
+If capacity is lowered below the confirmed count, existing confirmations remain valid, available
+capacity is reported as zero, and no further booking can be approved until capacity is raised.
 
 ---
 
@@ -419,7 +394,11 @@ Admin can set:
 * WhatsApp group URL.
 * Joining instructions.
 
-Confirmed students can access these.
+Live and WhatsApp URLs can be added only when the round start date has been reached. These values
+never appear in public course or round responses; confirmed students retrieve a dedicated join
+payload.
+
+Confirmed students and students awaiting cancellation completion can access these.
 
 Students without confirmed enrollment cannot.
 
@@ -442,7 +421,8 @@ The external recording can be hosted anywhere.
 
 Lumify only stores the URL.
 
-Confirmed students can access sessions belonging to their round.
+Confirmed students can access sessions belonging to their round. Students awaiting cancellation
+completion retain access until the admin completes the cancellation.
 
 Students retain access after the round finishes, which is explicitly required by the SRS. 
 
@@ -460,6 +440,10 @@ Admin can:
 * Review cancellation request.
 * Refund money manually outside Lumify.
 * Mark booking cancelled.
+
+The cancellation queue includes the student profile, course, round, original booking, and reason.
+The student retains protected course access while the request is pending. Completion records the
+admin note and cancellation timestamp and removes that access; Lumify never performs the refund.
 
 State:
 

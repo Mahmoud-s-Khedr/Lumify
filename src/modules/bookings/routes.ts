@@ -3,6 +3,11 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { requireAdmin, requireUser } from '../../common/authorization/auth.js';
+import {
+  calculateAvailableSeats,
+  calculateRoundState,
+  canTransitionBooking,
+} from '../../common/business/bookings.js';
 import { AppError } from '../../common/errors/app-error.js';
 import { parseRequest } from '../../common/validation/request.js';
 import { prisma } from '../../infrastructure/database/prisma.js';
@@ -28,6 +33,9 @@ const submitPaymentSchema = z.object({
   receiptFileId: idSchema,
 });
 const reviewSchema = z.object({ adminNote: z.string().trim().max(2_000).optional() });
+const cancellationSchema = z.object({
+  reason: z.string().trim().min(1).max(2_000),
+});
 
 const bookingInclude = {
   student: { select: { id: true, name: true, email: true, phone: true, contactInfo: true } },
@@ -57,12 +65,6 @@ function calendarToday(): Date {
   return today;
 }
 
-function calculatedRoundState(round: { startDate: Date; endDate: Date }, today = calendarToday()) {
-  if (round.startDate > today) return 'UPCOMING' as const;
-  if (round.endDate < today) return 'FINISHED' as const;
-  return 'IN_PROGRESS' as const;
-}
-
 function srsBookingState(status: BookingWithDetails['status']) {
   if (status === 'PENDING_PAYMENT' || status === 'PENDING_REVIEW') return 'PENDING' as const;
   if (status === 'PAYMENT_REJECTED') return 'REJECTED' as const;
@@ -79,7 +81,7 @@ function publicSchedule(schedule: { id: bigint; weekday: string; startTime: Date
 }
 
 function publicBooking(booking: BookingWithDetails, confirmedBooked: number) {
-  const emptySeats = Math.max(booking.round.capacity - confirmedBooked, 0);
+  const emptySeats = calculateAvailableSeats(booking.round.capacity, confirmedBooked);
   const paymentMethod =
     booking.paymentMethodSnapshot &&
     typeof booking.paymentMethodSnapshot === 'object' &&
@@ -103,7 +105,7 @@ function publicBooking(booking: BookingWithDetails, confirmedBooked: number) {
       },
       startDate: booking.round.startDate.toISOString().slice(0, 10),
       endDate: booking.round.endDate.toISOString().slice(0, 10),
-      state: calculatedRoundState(booking.round),
+      state: calculateRoundState(booking.round, calendarToday()),
       capacity: booking.round.capacity,
       confirmedBooked,
       emptySeats,
@@ -116,6 +118,8 @@ function publicBooking(booking: BookingWithDetails, confirmedBooked: number) {
     receipt: booking.receiptFile ? publicFile(booking.receiptFile) : null,
     adminNote: booking.adminNote,
     reviewedAt: booking.reviewedAt?.toISOString() ?? null,
+    cancellationReason: booking.cancellationReason,
+    cancelledAt: booking.cancelledAt?.toISOString() ?? null,
     createdAt: booking.createdAt.toISOString(),
     updatedAt: booking.updatedAt.toISOString(),
   };
@@ -162,7 +166,8 @@ async function reviewedBooking(
     `;
     const current = await tx.booking.findUnique({ where: { id: bookingId } });
     if (!current) throw new AppError(404, 'Booking was not found.', 'BOOKING_NOT_FOUND');
-    if (current.status !== 'PENDING_REVIEW')
+    const nextStatus = decision === 'APPROVE' ? 'CONFIRMED' : 'PAYMENT_REJECTED';
+    if (!canTransitionBooking(current.status, nextStatus))
       throw new AppError(
         409,
         'Only a booking pending review can be approved or rejected.',
@@ -182,7 +187,7 @@ async function reviewedBooking(
     const booking = await tx.booking.update({
       where: { id: bookingId },
       data: {
-        status: decision === 'APPROVE' ? 'CONFIRMED' : 'PAYMENT_REJECTED',
+        status: nextStatus,
         adminNote: adminNote || null,
         reviewedAt: new Date(),
       },
@@ -220,6 +225,12 @@ export async function bookingRoutes(app: FastifyInstance): Promise<void> {
           if (!round) throw new AppError(404, 'Round was not found.', 'ROUND_NOT_FOUND');
           if (round.course.archived)
             throw new AppError(409, 'Archived courses cannot be booked.', 'COURSE_ARCHIVED');
+          if (round.startDate <= calendarToday())
+            throw new AppError(
+              409,
+              'A round cannot be booked after its start date is reached.',
+              'ROUND_ALREADY_STARTED',
+            );
           if (confirmedBooked >= round.capacity)
             throw new AppError(409, 'The round has no empty seats.', 'ROUND_FULL');
 
@@ -262,7 +273,7 @@ export async function bookingRoutes(app: FastifyInstance): Promise<void> {
       const result = await prisma.$transaction(async (tx) => {
         const booking = await tx.booking.findFirst({ where: { id: bookingId, studentId } });
         if (!booking) throw new AppError(404, 'Booking was not found.', 'BOOKING_NOT_FOUND');
-        if (booking.status !== 'PENDING_PAYMENT' && booking.status !== 'PAYMENT_REJECTED')
+        if (!canTransitionBooking(booking.status, 'PENDING_REVIEW'))
           throw new AppError(
             409,
             'Payment evidence can be submitted only before review or after rejection.',
@@ -412,6 +423,126 @@ export async function bookingRoutes(app: FastifyInstance): Promise<void> {
       const params = parseRequest(bookingParamsSchema, request.params);
       const body = parseRequest(reviewSchema, request.body ?? {});
       const result = await reviewedBooking(BigInt(params.id), 'REJECT', body.adminNote);
+      return { booking: publicBooking(result.booking, result.confirmedBooked) };
+    },
+  );
+
+  app.post(
+    '/bookings/:id/cancellation',
+    {
+      schema: {
+        tags: ['Cancellations'],
+        summary: 'Request cancellation of a confirmed booking',
+        description:
+          'Course access remains available until an administrator completes the external refund and cancellation.',
+      },
+    },
+    async (request) => {
+      const identity = await requireUser(request);
+      if (identity.role !== 'STUDENT')
+        throw new AppError(403, 'Only students can request cancellation.', 'FORBIDDEN');
+      const params = parseRequest(bookingParamsSchema, request.params);
+      const body = parseRequest(cancellationSchema, request.body);
+      const bookingId = BigInt(params.id);
+      const studentId = BigInt(identity.sub);
+
+      const result = await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw<Array<{ id: bigint }>>`
+          SELECT id FROM bookings WHERE id = ${bookingId} FOR UPDATE
+        `;
+        const current = await tx.booking.findFirst({ where: { id: bookingId, studentId } });
+        if (!current) throw new AppError(404, 'Booking was not found.', 'BOOKING_NOT_FOUND');
+        if (!canTransitionBooking(current.status, 'CANCELLATION_REQUESTED'))
+          throw new AppError(
+            409,
+            'Only a confirmed booking can be cancelled.',
+            'INVALID_BOOKING_TRANSITION',
+          );
+        const booking = await tx.booking.update({
+          where: { id: bookingId },
+          data: {
+            status: 'CANCELLATION_REQUESTED',
+            cancellationReason: body.reason,
+            adminNote: null,
+            cancelledAt: null,
+          },
+          include: bookingInclude,
+        });
+        const confirmedBooked = await tx.booking.count({
+          where: { roundId: current.roundId, status: 'CONFIRMED' },
+        });
+        return { booking, confirmedBooked };
+      });
+      return { booking: publicBooking(result.booking, result.confirmedBooked) };
+    },
+  );
+
+  app.get(
+    '/admin/cancellations',
+    {
+      schema: {
+        tags: ['Cancellations'],
+        summary: 'List cancellation requests awaiting an external refund',
+      },
+    },
+    async (request) => {
+      await requireAdmin(request);
+      const bookings = await prisma.booking.findMany({
+        where: { status: 'CANCELLATION_REQUESTED' },
+        include: bookingInclude,
+        orderBy: { updatedAt: 'asc' },
+      });
+      const counts = await confirmedCounts(bookings.map((booking) => booking.roundId));
+      return {
+        bookings: bookings.map((booking) =>
+          publicBooking(booking, counts.get(booking.roundId) ?? 0),
+        ),
+      };
+    },
+  );
+
+  app.post(
+    '/admin/bookings/:id/cancellation/complete',
+    {
+      schema: {
+        tags: ['Cancellations'],
+        summary: 'Record an externally refunded cancellation as complete',
+        description:
+          'Lumify records the outcome only; the administrator must complete the refund outside the platform first.',
+      },
+    },
+    async (request) => {
+      await requireAdmin(request);
+      const params = parseRequest(bookingParamsSchema, request.params);
+      const body = parseRequest(reviewSchema, request.body ?? {});
+      const bookingId = BigInt(params.id);
+
+      const result = await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw<Array<{ id: bigint }>>`
+          SELECT id FROM bookings WHERE id = ${bookingId} FOR UPDATE
+        `;
+        const current = await tx.booking.findUnique({ where: { id: bookingId } });
+        if (!current) throw new AppError(404, 'Booking was not found.', 'BOOKING_NOT_FOUND');
+        if (!canTransitionBooking(current.status, 'CANCELLED'))
+          throw new AppError(
+            409,
+            'Only a pending cancellation request can be completed.',
+            'INVALID_BOOKING_TRANSITION',
+          );
+        const booking = await tx.booking.update({
+          where: { id: bookingId },
+          data: {
+            status: 'CANCELLED',
+            adminNote: body.adminNote || null,
+            cancelledAt: new Date(),
+          },
+          include: bookingInclude,
+        });
+        const confirmedBooked = await tx.booking.count({
+          where: { roundId: current.roundId, status: 'CONFIRMED' },
+        });
+        return { booking, confirmedBooked };
+      });
       return { booking: publicBooking(result.booking, result.confirmedBooked) };
     },
   );

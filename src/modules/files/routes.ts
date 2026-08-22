@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { requireUser } from '../../common/authorization/auth.js';
+import { courseAccessStatuses } from '../../common/business/bookings.js';
 import { AppError } from '../../common/errors/app-error.js';
 import { parseRequest } from '../../common/validation/request.js';
 import { env } from '../../config/env.js';
@@ -35,7 +36,7 @@ const uploadSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('PAYMENT_RECEIPT'),
     originalName: originalNameSchema,
-    mimeType: z.enum(imageMimeTypes),
+    mimeType: materialMimeTypeSchema,
   }),
 ]);
 const completeSchema = z.discriminatedUnion('kind', [
@@ -54,7 +55,7 @@ const completeSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('PAYMENT_RECEIPT'),
     originalName: originalNameSchema,
-    mimeType: z.enum(imageMimeTypes),
+    mimeType: materialMimeTypeSchema,
     storageKey: z.string().regex(/^payment-receipts\/[0-9a-f-]{36}$/),
   }),
 ]);
@@ -186,7 +187,7 @@ export async function fileRoutes(app: FastifyInstance): Promise<void> {
                 where: {
                   studentId: BigInt(identity.sub),
                   roundId: { in: materialRoundIds },
-                  status: 'CONFIRMED',
+                  status: { in: courseAccessStatuses },
                 },
               })) > 0
             : false;

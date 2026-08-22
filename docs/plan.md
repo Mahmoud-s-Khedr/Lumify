@@ -338,11 +338,15 @@ Implement:
 * Create round.
 * Get round.
 * List course rounds.
-* Update the round's core details only while it has no bookings.
+* Update the round's dates only while it has no bookings.
+* Update capacity at any time.
 * Delete a round only while it has no bookings.
 * Update materials and external material links regardless of enrollment, as the SRS explicitly allows.
 
-The SRS says a round may be updated or deleted only when no students are registered. Treat any existing booking as enrollment for these two guards, including a pending booking, so an admin cannot invalidate a student's request. This replaces the earlier assumption that capacity could always be changed. If the product needs capacity changes after enrollment, it must be explicitly approved as a policy exception and include an audit trail.
+Treat any existing booking as enrollment for date, schedule, and deletion guards, including a
+pending booking, so an admin cannot invalidate a student's request. Capacity is an explicit product
+exception and can be raised or lowered at any time. The update takes the same PostgreSQL round lock
+as booking approval, so concurrent changes cannot bypass the current capacity.
 
 ## Flexible schedule
 
@@ -384,16 +388,17 @@ Test:
 * round creation
 * different times per weekday
 * schedule modification
-* capacity modification before enrollment
+* capacity modification before and after enrollment
 * R2 material upload
 * external material link
-* rejection of core updates/deletion once a booking exists
+* rejection of date/schedule updates and deletion once a booking exists
 * permitted material/link update after enrollment
 
 ### Completion record
 
 Implemented public course-round listing and details, admin round creation/update/deletion,
-flexible per-weekday schedules, and booking-aware mutation guards. Added private R2 material
+flexible per-weekday schedules, booking-aware date/schedule/deletion guards, and capacity updates
+at any time. Added private R2 material
 uploads with file/link material CRUD and confirmed-student access controls. Verified Phase 4
 journeys and the complete existing test suite against PostgreSQL.
 
@@ -439,12 +444,16 @@ choose a configured payment method
        ↓
 transfer money manually to its account/phone number
        ↓
-upload a screenshot of the payment to R2
+upload a receipt file to R2
        ↓
 PENDING_REVIEW
 ```
 
-The platform performs no automated payment verification and does not integrate with a payment gateway. Students see the configured account/phone details (for example, Instapay or Vodafone Cash), send the money outside Lumify, and upload a screenshot of the payment. The receipt is private in R2 and the booking moves to `PENDING_REVIEW`.
+The platform performs no automated payment verification and does not integrate with a payment
+gateway. Students see the configured account/phone details (for example, Instapay or Vodafone
+Cash), send the money outside Lumify, and upload a receipt file. Receipts accept images, PDFs, and
+other document MIME types up to 10 MB. The receipt is private in R2 and the booking moves to
+`PENDING_REVIEW`.
 
 ## Admin review
 
@@ -456,7 +465,7 @@ Admin views:
 * Round.
 * Expected payment.
 * Payment method and its account/phone details.
-* Payment receipt screenshot.
+* Payment receipt file.
 * Submission details.
 
 Admin can:
@@ -549,9 +558,12 @@ This check must use a PostgreSQL transaction/locking strategy so simultaneous ap
 41 / 40
 ```
 
-### Capacity follows round update rules
+### Capacity can be changed at any time
 
-Capacity is a core round detail. It can be changed while the round has no bookings, but the SRS does not allow it to be changed after students have registered. This avoids silently putting confirmed students over a newly lowered capacity. Materials and links remain independently editable after enrollment.
+An admin can raise or lower capacity before or after enrollment. If capacity is lowered below the
+current confirmed count, existing confirmations remain valid, available seats are reported as zero,
+and no new booking can be approved until capacity exceeds the confirmed count. Capacity changes
+and approvals lock the same PostgreSQL round row so the rule remains correct under concurrency.
 
 ### Acceptance gate
 
@@ -570,14 +582,14 @@ The booking phase is not complete until the journey tests for:
 * pending requests exceeding capacity
 * final-seat approval
 * simultaneous approval race
-* capacity update before enrollment and rejection after enrollment
+* capacity increase and decrease before and after enrollment
 
 all pass.
 
 ### Completion record
 
 Implemented student round booking with phone, duplicate, historical-price, archived-course, and
-confirmed-capacity guards. Added private receipt-image uploads, configured manual-payment
+confirmed-capacity guards. Added private receipt-document uploads (including images and PDFs), configured manual-payment
 submission with preserved account details, admin approval/rejection, rejected-payment
 resubmission, admin enrollment counts, and composable booking/round-state filters. PostgreSQL row
 locking serializes booking and approval decisions for a round so concurrent final-seat approvals
@@ -586,7 +598,7 @@ suite against PostgreSQL.
 
 ---
 
-# Phase 6 — Course delivery
+# Phase 6 — Course delivery — ✅ Completed (2026-08-22)
 
 The SRS requires students to access their rounds, live links, WhatsApp links, materials and recorded sessions. 
 
@@ -643,9 +655,17 @@ other service
 
 A confirmed student retains access to the round's materials and recorded sessions after it ends. Admins have access to all sessions of all rounds. This implements the SRS requirement that enrolled students and admins can access sessions even after the round ends.
 
+### Completion record
+
+Implemented start-date-gated live/WhatsApp configuration, a protected join-screen payload, and
+admin session creation, editing, deletion, and cross-round listing. Confirmed students retain
+materials and recording access after a round ends. Students awaiting cancellation completion keep
+access until the cancellation is finalized; public course and round payloads never expose join
+details. Verified the course-delivery journeys against PostgreSQL.
+
 ---
 
-# Phase 7 — Cancellation
+# Phase 7 — Cancellation — ✅ Completed (2026-08-22)
 
 Cancellation is desirable rather than mandatory in the SRS. 
 
@@ -673,9 +693,16 @@ Lumify does not perform the actual financial refund.
 
 Admin can list cancellation requests with the student profile, course, round, and original booking details; completing the request records `CANCELLED` and removes the student's course access. This is a desirable SRS feature and should follow the mandatory phases if delivery must be staged.
 
+### Completion record
+
+Implemented confirmed-booking cancellation requests with a required reason, an administrator
+cancellation queue, and completion after the external refund with an admin note and timestamp.
+Protected access remains active during review and is removed at `CANCELLED`. The workflow uses
+row-locked booking transitions and has complete HTTP journey coverage.
+
 ---
 
-# Phase 8 — Final testing and hardening
+# Phase 8 — Final testing and hardening — ✅ Completed (2026-08-22)
 
 At this point run the complete approved journey suite.
 
@@ -723,9 +750,18 @@ Against a real PostgreSQL test database:
 
 Exercise complete HTTP requests through Fastify.
 
+### Completion record
+
+Added focused unit coverage for capacity calculation, round-state boundaries, booking transitions,
+and cancellation access. Added PostgreSQL-backed HTTP journeys for protected join details,
+historical sessions, session administration, cancellation access, cancellation completion, and the
+started-round booking guard. Added a database-backed readiness endpoint, trusted-proxy
+configuration, a non-root production image, and production container hardening. The complete
+format, lint, build, and test gates pass.
+
 ---
 
-# Phase 9 — Production deployment
+# Phase 9 — Production deployment package — ✅ Repository ready (2026-08-22)
 
 VPS layout:
 
@@ -761,6 +797,15 @@ postgres
 ```
 
 Nginx can run either on the host or as another container; I would keep it on the host unless there is a reason to containerize it.
+
+### Completion record
+
+Added a production-only Compose stack with a private PostgreSQL service, loopback-only API port,
+readiness checks, immutable API filesystem, restart policies, and required secret validation. Added
+HTTP-bootstrap and HTTPS Nginx templates with proxy headers, rate limiting, request limits, and TLS
+hardening, plus a retained `pg_dump` backup command and a deployment/restore runbook. Applying the
+package to a live VPS still requires the target domain, VPS access, TLS issuance, and production
+Resend/R2/database secrets.
 
 ---
 

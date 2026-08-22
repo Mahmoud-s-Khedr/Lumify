@@ -226,12 +226,20 @@ describe('Phase 4 round, schedule, and material journeys', () => {
         price: 1500,
       },
     });
-    const blockedCoreUpdate = await api(`/rounds/${roundId}`, {
+    const capacityUpdate = await api(`/rounds/${roundId}`, {
       method: 'PATCH',
       headers: adminHeaders,
       body: JSON.stringify({ capacity: 50 }),
     });
-    expect(blockedCoreUpdate.status).toBe(409);
+    expect(capacityUpdate.status).toBe(200);
+    expect(capacityUpdate.body).toMatchObject({ round: { capacity: 50 } });
+    const blockedDateUpdate = await api(`/rounds/${roundId}`, {
+      method: 'PATCH',
+      headers: adminHeaders,
+      body: JSON.stringify({ endDate: '2026-11-01' }),
+    });
+    expect(blockedDateUpdate.status).toBe(409);
+    expect(blockedDateUpdate.body).toMatchObject({ error: 'ROUND_HAS_BOOKINGS' });
     const blockedScheduleUpdate = await api(`/rounds/${roundId}/schedules`, {
       method: 'POST',
       headers: adminHeaders,
