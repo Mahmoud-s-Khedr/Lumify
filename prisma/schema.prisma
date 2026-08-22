@@ -204,6 +204,7 @@ model Booking {
   price            Decimal       @db.Decimal(10, 2)
   status           BookingStatus @default(PENDING_PAYMENT)
   paymentMethodKey String?       @map("payment_method_key") @db.VarChar(100)
+  paymentMethodSnapshot Json?    @map("payment_method_snapshot")
   receiptFileId    BigInt?       @map("receipt_file_id")
   adminNote        String?       @map("admin_note")
   reviewedAt       DateTime?     @map("reviewed_at")

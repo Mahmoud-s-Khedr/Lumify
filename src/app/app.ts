@@ -11,9 +11,11 @@ import Fastify from 'fastify';
 import { AppError } from '../common/errors/app-error.js';
 import { corsOrigins, env } from '../config/env.js';
 import { authRoutes } from '../modules/auth/routes.js';
+import { bookingRoutes } from '../modules/bookings/routes.js';
 import { paymentMethodRoutes } from '../modules/payment-methods/routes.js';
 import { courseRoutes } from '../modules/courses/routes.js';
 import { fileRoutes } from '../modules/files/routes.js';
+import { roundRoutes } from '../modules/rounds/routes.js';
 import { userRoutes } from '../modules/users/routes.js';
 
 const healthResponseSchema = {
@@ -76,12 +78,6 @@ export async function buildApp(): Promise<FastifyInstance> {
     async () => ({ status: 'ok', timestamp: new Date().toISOString() }),
   );
 
-  await app.register(authRoutes);
-  await app.register(userRoutes);
-  await app.register(paymentMethodRoutes);
-  await app.register(fileRoutes);
-  await app.register(courseRoutes);
-
   app.setNotFoundHandler((request, reply) => {
     return reply.code(404).send({
       error: 'NOT_FOUND',
@@ -109,6 +105,14 @@ export async function buildApp(): Promise<FastifyInstance> {
       message: 'An unexpected error occurred.',
     });
   });
+
+  await app.register(authRoutes);
+  await app.register(userRoutes);
+  await app.register(paymentMethodRoutes);
+  await app.register(fileRoutes);
+  await app.register(courseRoutes);
+  await app.register(roundRoutes);
+  await app.register(bookingRoutes);
 
   return app;
 }

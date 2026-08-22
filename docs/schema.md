@@ -217,6 +217,7 @@ CREATE TABLE bookings (
 
     payment_method_key      VARCHAR(100)
                             REFERENCES payment_methods(key),
+    payment_method_snapshot JSONB,
     receipt_file_id         BIGINT REFERENCES files(id),
 
     admin_note              TEXT,
