@@ -18,6 +18,7 @@ import { courseRoutes } from '../modules/courses/routes.js';
 import { fileRoutes } from '../modules/files/routes.js';
 import { roundRoutes } from '../modules/rounds/routes.js';
 import { sessionRoutes } from '../modules/sessions/routes.js';
+import { studentRoutes } from '../modules/student/routes.js';
 import { userRoutes } from '../modules/users/routes.js';
 
 const healthResponseSchema = {
@@ -147,6 +148,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(roundRoutes);
   await app.register(bookingRoutes);
   await app.register(sessionRoutes);
+  await app.register(studentRoutes);
 
   return app;
 }

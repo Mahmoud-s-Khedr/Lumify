@@ -48,6 +48,12 @@ representations are `GET /docs/json` and `GET /docs/yaml`.
 | GET | `/users/me` | Authenticated | Get the current user profile. |
 | PATCH | `/users/me` | Authenticated | Update one or more of `{ name?, phone?, contactInfo? }`; `phone` and `contactInfo` may be `null`. |
 
+## Student dashboard
+
+| Method | Path | Access | Body / purpose |
+| --- | --- | --- | --- |
+| GET | `/student/dashboard` | Student | Return the current student's name, confirmed-round summaries (with the next future session if any), up to four newest active courses not already confirmed-enrolled, and up to three newest eligible recording summaries. The response excludes join URLs, WhatsApp links, booking/payment data, receipts, and other students' data. |
+
 ## Payment methods
 
 | Method | Path | Access | Body / purpose |
