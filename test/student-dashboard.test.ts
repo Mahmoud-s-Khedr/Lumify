@@ -15,6 +15,7 @@ describe('student dashboard', () => {
   });
 
   afterEach(async () => {
+    await prisma.courseReview.deleteMany();
     await prisma.booking.deleteMany();
     await prisma.session.deleteMany();
     await prisma.roundMaterial.deleteMany();

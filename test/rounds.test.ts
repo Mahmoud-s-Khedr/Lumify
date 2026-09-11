@@ -12,6 +12,7 @@ describe('Phase 4 round, schedule, and material journeys', () => {
   });
 
   afterEach(async () => {
+    await prisma.courseReview.deleteMany();
     await prisma.booking.deleteMany();
     await prisma.session.deleteMany();
     await prisma.roundMaterial.deleteMany();
@@ -153,7 +154,13 @@ describe('Phase 4 round, schedule, and material journeys', () => {
       `/courses/${course.id.toString()}/rounds`,
     );
     expect(publicList.status).toBe(200);
-    expect(publicList.body.rounds.map((round) => round.id)).toEqual([created.body.round.id]);
+    expect(publicList.body.rounds).toEqual([]);
+
+    const adminList = await api<{ rounds: Array<{ id: string }> }>(
+      `/courses/${course.id.toString()}/rounds?includeUnavailable=true`,
+      { headers: adminHeaders },
+    );
+    expect(adminList.body.rounds.map((round) => round.id)).toEqual([created.body.round.id]);
   });
 
   it('uploads private material, adds a link, and permits material edits after enrollment', async () => {

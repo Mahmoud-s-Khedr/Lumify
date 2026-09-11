@@ -31,6 +31,7 @@ const submitPaymentSchema = z.object({
     .max(100)
     .regex(/^[A-Z][A-Z0-9_]*$/),
   receiptFileId: idSchema,
+  transactionReference: z.string().trim().min(1).max(500).nullable().optional(),
 });
 const reviewSchema = z.object({ adminNote: z.string().trim().max(2_000).optional() });
 const cancellationSchema = z.object({
@@ -115,6 +116,7 @@ function publicBooking(booking: BookingWithDetails, confirmedBooked: number) {
     status: booking.status,
     bookingState: srsBookingState(booking.status),
     paymentMethod,
+    transactionReference: booking.transactionReference,
     receipt: booking.receiptFile ? publicFile(booking.receiptFile) : null,
     adminNote: booking.adminNote,
     reviewedAt: booking.reviewedAt?.toISOString() ?? null,
@@ -305,7 +307,12 @@ export async function bookingRoutes(app: FastifyInstance): Promise<void> {
           where: { id: bookingId },
           data: {
             paymentMethodKey: paymentMethod.key,
-            paymentMethodSnapshot: { key: paymentMethod.key, value: paymentMethod.value },
+            paymentMethodSnapshot: {
+              key: paymentMethod.key,
+              value: paymentMethod.value,
+              description: paymentMethod.description,
+            },
+            transactionReference: body.transactionReference ?? null,
             receiptFileId: receipt.id,
             status: 'PENDING_REVIEW',
             adminNote: null,

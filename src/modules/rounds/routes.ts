@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
 import { requireAdmin, requireUser } from '../../common/authorization/auth.js';
-import { courseAccessStatuses } from '../../common/business/bookings.js';
+import { calculateAvailableSeats, courseAccessStatuses } from '../../common/business/bookings.js';
 import { AppError } from '../../common/errors/app-error.js';
 import { parseRequest } from '../../common/validation/request.js';
 import { prisma } from '../../infrastructure/database/prisma.js';
@@ -48,6 +48,7 @@ const updateRoundSchema = roundValuesSchema
   .partial()
   .refine((value) => Object.keys(value).length > 0, 'At least one round field is required.');
 const courseParamsSchema = z.object({ courseId: idSchema });
+const listRoundsQuerySchema = z.object({ includeUnavailable: z.enum(['true']).optional() });
 const roundParamsSchema = z.object({ id: idSchema });
 const scheduleParamsSchema = z.object({ id: idSchema, scheduleId: idSchema });
 const updateScheduleSchema = scheduleValuesSchema
@@ -106,6 +107,7 @@ const updateMaterialSchema = z
 const roundInclude = {
   course: { select: { id: true, title: true, archived: true } },
   schedules: { orderBy: { weekday: 'asc' as const } },
+  _count: { select: { bookings: { where: { status: 'CONFIRMED' } } } },
 } satisfies Prisma.CourseRoundInclude;
 
 type RoundWithDetails = Prisma.CourseRoundGetPayload<{ include: typeof roundInclude }>;
@@ -134,12 +136,17 @@ function publicSchedule(schedule: { id: bigint; weekday: string; startTime: Date
 }
 
 function publicRound(round: RoundWithDetails) {
+  const confirmedBooked = round._count.bookings;
+  const emptySeats = calculateAvailableSeats(round.capacity, confirmedBooked);
   return {
     id: round.id.toString(),
     course: { id: round.course.id.toString(), title: round.course.title },
     startDate: round.startDate.toISOString().slice(0, 10),
     endDate: round.endDate.toISOString().slice(0, 10),
     capacity: round.capacity,
+    confirmedBooked,
+    emptySeats,
+    availability: emptySeats > 0 ? ('AVAILABLE' as const) : ('FULL' as const),
     schedules: round.schedules
       .sort(
         (left, right) =>
@@ -149,6 +156,12 @@ function publicRound(round: RoundWithDetails) {
     createdAt: round.createdAt.toISOString(),
     updatedAt: round.updatedAt.toISOString(),
   };
+}
+
+function calendarToday(): Date {
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  return today;
 }
 
 function publicMaterial(material: MaterialWithFile) {
@@ -242,9 +255,21 @@ async function requireMaterialAccess(request: FastifyRequest, roundId: bigint): 
 export async function roundRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     '/courses/:courseId/rounds',
-    { schema: { tags: ['Rounds'], summary: 'List the rounds for a course' } },
+    {
+      schema: {
+        tags: ['Rounds'],
+        summary: 'List bookable rounds for a course',
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { includeUnavailable: { type: 'string', enum: ['true'] } },
+        },
+      },
+    },
     async (request) => {
       const params = parseRequest(courseParamsSchema, request.params);
+      const query = parseRequest(listRoundsQuerySchema, request.query);
+      if (query.includeUnavailable) await requireAdmin(request);
       const course = await prisma.course.findUnique({
         where: { id: BigInt(params.courseId) },
         select: { archived: true },
@@ -256,7 +281,12 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
         include: roundInclude,
         orderBy: { startDate: 'asc' },
       });
-      return { rounds: rounds.map(publicRound) };
+      const visible = query.includeUnavailable
+        ? rounds
+        : rounds.filter(
+            (round) => round.startDate > calendarToday() && round._count.bookings < round.capacity,
+          );
+      return { rounds: visible.map(publicRound) };
     },
   );
 

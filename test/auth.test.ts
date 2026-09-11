@@ -146,14 +146,22 @@ describe('Phase 2 authentication and configuration journeys', () => {
     const forbidden = await api('/payment-methods', {
       method: 'POST',
       headers: { authorization: `Bearer ${studentToken}` },
-      body: JSON.stringify({ key: 'INSTAPAY', value: '0123456789' }),
+      body: JSON.stringify({
+        key: 'INSTAPAY',
+        value: '0123456789',
+        description: 'Send your payment to this Instapay account.',
+      }),
     });
     expect(forbidden.status).toBe(403);
 
     const created = await api('/payment-methods', {
       method: 'POST',
       headers: { authorization: `Bearer ${adminToken}` },
-      body: JSON.stringify({ key: 'INSTAPAY', value: '0123456789' }),
+      body: JSON.stringify({
+        key: 'INSTAPAY',
+        value: '0123456789',
+        description: 'Send your payment to this Instapay account.',
+      }),
     });
     expect(created.status).toBe(201);
     const listed = await api('/payment-methods', {
@@ -161,7 +169,13 @@ describe('Phase 2 authentication and configuration journeys', () => {
     });
     expect(listed.status).toBe(200);
     expect(listed.body).toMatchObject({
-      paymentMethods: [{ key: 'INSTAPAY', value: '0123456789' }],
+      paymentMethods: [
+        {
+          key: 'INSTAPAY',
+          value: '0123456789',
+          description: 'Send your payment to this Instapay account.',
+        },
+      ],
     });
   });
 });

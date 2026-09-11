@@ -44,6 +44,14 @@ enum BookingStatus {
   @@map("booking_status")
 }
 
+enum CourseReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("course_review_status")
+}
+
 model User {
   id            BigInt   @id @default(autoincrement())
   name          String   @db.VarChar(255)
@@ -60,6 +68,7 @@ model User {
   authSessions AuthSession[]
   files      File[]      @relation("UploadedFiles")
   bookings   Booking[]
+  courseReviews CourseReview[]
 
   @@map("users")
 }
@@ -108,8 +117,9 @@ model File {
 }
 
 model PaymentMethod {
-  key      String    @id @db.VarChar(100)
-  value    String
+  key         String    @id @db.VarChar(100)
+  value       String
+  description String
   bookings Booking[]
 
   @@map("payment_methods")
@@ -132,6 +142,7 @@ model Course {
   dependentCourses     Course[]      @relation("CoursePrerequisite")
   images               CourseImage[]
   rounds               CourseRound[]
+  reviews              CourseReview[]
 
   @@index([archived])
   @@map("courses")
@@ -205,6 +216,7 @@ model Booking {
   status           BookingStatus @default(PENDING_PAYMENT)
   paymentMethodKey String?       @map("payment_method_key") @db.VarChar(100)
   paymentMethodSnapshot Json?    @map("payment_method_snapshot")
+  transactionReference String?   @map("transaction_reference")
   receiptFileId    BigInt?       @map("receipt_file_id")
   adminNote        String?       @map("admin_note")
   reviewedAt       DateTime?     @map("reviewed_at")
@@ -220,6 +232,26 @@ model Booking {
   @@unique([studentId, roundId])
   @@index([roundId, status])
   @@map("bookings")
+}
+
+model CourseReview {
+  id        BigInt             @id @default(autoincrement())
+  courseId  BigInt             @map("course_id")
+  studentId BigInt             @map("student_id")
+  rating    Int
+  comment   String
+  status    CourseReviewStatus @default(PENDING)
+  adminNote String?            @map("admin_note")
+  reviewedAt DateTime?         @map("reviewed_at")
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @default(now()) @updatedAt @map("updated_at")
+  course    Course             @relation(fields: [courseId], references: [id])
+  student   User               @relation(fields: [studentId], references: [id])
+
+  @@unique([courseId, studentId])
+  @@index([courseId, status, createdAt])
+  @@index([studentId])
+  @@map("course_reviews")
 }
 
 model Session {

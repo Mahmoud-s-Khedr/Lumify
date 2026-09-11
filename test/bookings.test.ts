@@ -12,7 +12,8 @@ type PublicBooking = {
   price: string;
   status: BookingStatus;
   bookingState: string;
-  paymentMethod: { key: string; value: string } | null;
+  paymentMethod: { key: string; value: string; description?: string } | null;
+  transactionReference: string | null;
   receipt: { id: string; mimeType: string; downloadUrl: string } | null;
   adminNote: string | null;
   round: {
@@ -32,6 +33,7 @@ describe('Phase 5 booking and manual-payment journeys', () => {
   });
 
   afterEach(async () => {
+    await prisma.courseReview.deleteMany();
     await prisma.booking.deleteMany();
     await prisma.session.deleteMany();
     await prisma.roundMaterial.deleteMany();
@@ -255,7 +257,11 @@ describe('Phase 5 booking and manual-payment journeys', () => {
     ]);
     const { round } = await createCourseAndRound(3);
     await prisma.paymentMethod.create({
-      data: { key: 'INSTAPAY', value: 'instapay-old@example.com' },
+      data: {
+        key: 'INSTAPAY',
+        value: 'instapay-old@example.com',
+        description: 'Send the payment to this Instapay account.',
+      },
     });
 
     const booked = await api<{ booking: PublicBooking }>(
@@ -272,19 +278,31 @@ describe('Phase 5 booking and manual-payment journeys', () => {
       {
         method: 'POST',
         headers: studentHeaders,
-        body: JSON.stringify({ paymentMethodKey: 'INSTAPAY', receiptFileId: firstReceiptId }),
+        body: JSON.stringify({
+          paymentMethodKey: 'INSTAPAY',
+          receiptFileId: firstReceiptId,
+          transactionReference: 'TX-OLD-001',
+        }),
       },
     );
     expect(submitted.status).toBe(200);
     expect(submitted.body.booking).toMatchObject({
       status: 'PENDING_REVIEW',
-      paymentMethod: { key: 'INSTAPAY', value: 'instapay-old@example.com' },
+      paymentMethod: {
+        key: 'INSTAPAY',
+        value: 'instapay-old@example.com',
+        description: 'Send the payment to this Instapay account.',
+      },
+      transactionReference: 'TX-OLD-001',
       receipt: { id: firstReceiptId, mimeType: 'application/pdf' },
     });
 
     await prisma.paymentMethod.update({
       where: { key: 'INSTAPAY' },
-      data: { value: 'instapay-new@example.com' },
+      data: {
+        value: 'instapay-new@example.com',
+        description: 'Use the updated Instapay account.',
+      },
     });
     const adminPending = await api<{ bookings: PublicBooking[] }>(
       '/admin/bookings?bookingState=PENDING',
@@ -293,7 +311,12 @@ describe('Phase 5 booking and manual-payment journeys', () => {
     expect(adminPending.status).toBe(200);
     expect(adminPending.body.bookings).toHaveLength(1);
     expect(adminPending.body.bookings[0]).toMatchObject({
-      paymentMethod: { key: 'INSTAPAY', value: 'instapay-old@example.com' },
+      paymentMethod: {
+        key: 'INSTAPAY',
+        value: 'instapay-old@example.com',
+        description: 'Send the payment to this Instapay account.',
+      },
+      transactionReference: 'TX-OLD-001',
       round: { capacity: 3, confirmedBooked: 0, emptySeats: 3 },
     });
 
@@ -340,13 +363,22 @@ describe('Phase 5 booking and manual-payment journeys', () => {
       {
         method: 'POST',
         headers: studentHeaders,
-        body: JSON.stringify({ paymentMethodKey: 'INSTAPAY', receiptFileId: secondReceiptId }),
+        body: JSON.stringify({
+          paymentMethodKey: 'INSTAPAY',
+          receiptFileId: secondReceiptId,
+          transactionReference: null,
+        }),
       },
     );
     expect(resubmitted.status).toBe(200);
     expect(resubmitted.body.booking).toMatchObject({
       status: 'PENDING_REVIEW',
-      paymentMethod: { key: 'INSTAPAY', value: 'instapay-new@example.com' },
+      paymentMethod: {
+        key: 'INSTAPAY',
+        value: 'instapay-new@example.com',
+        description: 'Use the updated Instapay account.',
+      },
+      transactionReference: null,
       receipt: { id: secondReceiptId },
       adminNote: null,
     });

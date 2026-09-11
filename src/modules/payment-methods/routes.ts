@@ -14,7 +14,17 @@ const paymentMethodSchema = z.object({
     .max(100)
     .regex(/^[A-Z][A-Z0-9_]*$/),
   value: z.string().trim().min(1),
+  description: z.string().trim().min(1).max(2_000),
 });
+const updatePaymentMethodSchema = z
+  .object({
+    value: z.string().trim().min(1).optional(),
+    description: z.string().trim().min(1).max(2_000).optional(),
+  })
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    'At least one payment method field is required.',
+  );
 
 export async function paymentMethodRoutes(app: FastifyInstance): Promise<void> {
   app.get(
@@ -46,11 +56,11 @@ export async function paymentMethodRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch(
     '/payment-methods/:key',
-    { schema: { tags: ['Payment methods'], summary: 'Update a payment method value' } },
+    { schema: { tags: ['Payment methods'], summary: 'Update a payment method' } },
     async (request) => {
       await requireAdmin(request);
       const params = parseRequest(z.object({ key: paymentMethodSchema.shape.key }), request.params);
-      const body = parseRequest(z.object({ value: z.string().trim().min(1) }), request.body);
+      const body = parseRequest(updatePaymentMethodSchema, request.body);
       const result = await prisma.paymentMethod.updateMany({
         where: { key: params.key },
         data: body,

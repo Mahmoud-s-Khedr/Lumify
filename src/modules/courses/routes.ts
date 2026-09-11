@@ -33,9 +33,12 @@ const listSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   archived: z.enum(['true', 'false']).optional(),
+  minRating: z.coerce.number().min(1).max(5).optional(),
+  sort: z.enum(['rating_desc', 'rating_asc']).optional(),
 });
 
 type CourseWithImages = Course & { images: Array<{ sortOrder: number | null; file: File }> };
+type CourseRating = { averageRating: number | null; reviewCount: number };
 
 function jsonList(
   value: string[] | null | undefined,
@@ -44,7 +47,10 @@ function jsonList(
   return value === null ? Prisma.JsonNull : value;
 }
 
-function publicCourse(course: CourseWithImages) {
+function publicCourse(
+  course: CourseWithImages,
+  rating: CourseRating = { averageRating: null, reviewCount: 0 },
+) {
   return {
     id: course.id.toString(),
     title: course.title,
@@ -58,10 +64,28 @@ function publicCourse(course: CourseWithImages) {
     archived: course.archived,
     createdAt: course.createdAt.toISOString(),
     updatedAt: course.updatedAt.toISOString(),
+    averageRating: rating.averageRating,
+    reviewCount: rating.reviewCount,
     images: course.images
       .sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0))
       .map((image) => publicFile(image.file)),
   };
+}
+
+async function courseRatings(courseIds: bigint[]): Promise<Map<bigint, CourseRating>> {
+  if (courseIds.length === 0) return new Map();
+  const ratings = await prisma.courseReview.groupBy({
+    by: ['courseId'],
+    where: { courseId: { in: [...new Set(courseIds)] }, status: 'APPROVED' },
+    _count: { _all: true },
+    _avg: { rating: true },
+  });
+  return new Map(
+    ratings.map((rating) => [
+      rating.courseId,
+      { averageRating: rating._avg.rating ?? null, reviewCount: rating._count._all },
+    ]),
+  );
 }
 
 async function ensureValidPrerequisite(
@@ -152,7 +176,24 @@ function matchesSearch(course: CourseWithImages, query: string): boolean {
 export async function courseRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     '/courses',
-    { schema: { tags: ['Courses'], summary: 'List courses in the catalogue' } },
+    {
+      schema: {
+        tags: ['Courses'],
+        summary: 'List courses in the catalogue',
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            q: { type: 'string' },
+            page: { type: 'integer', minimum: 1 },
+            pageSize: { type: 'integer', minimum: 1, maximum: 100 },
+            archived: { type: 'string', enum: ['true', 'false'] },
+            minRating: { type: 'number', minimum: 1, maximum: 5 },
+            sort: { type: 'string', enum: ['rating_desc', 'rating_asc'] },
+          },
+        },
+      },
+    },
     async (request) => {
       const query = parseRequest(listSchema, request.query);
       const wantsArchived = query.archived === 'true';
@@ -162,14 +203,31 @@ export async function courseRoutes(app: FastifyInstance): Promise<void> {
         include: { images: { include: { file: true }, orderBy: { sortOrder: 'asc' } } },
         orderBy: { createdAt: 'desc' },
       });
-      const matched = query.q
+      let matched = query.q
         ? courses.filter((course) => matchesSearch(course, query.q ?? ''))
         : courses;
+      const ratings = await courseRatings(matched.map((course) => course.id));
+      if (query.minRating !== undefined)
+        matched = matched.filter(
+          (course) => (ratings.get(course.id)?.averageRating ?? 0) >= query.minRating!,
+        );
+      if (query.sort) {
+        const direction = query.sort === 'rating_desc' ? -1 : 1;
+        matched.sort((left, right) => {
+          const leftRating = ratings.get(left.id)?.averageRating ?? null;
+          const rightRating = ratings.get(right.id)?.averageRating ?? null;
+          if (leftRating === null) return rightRating === null ? 0 : 1;
+          if (rightRating === null) return -1;
+          return (leftRating - rightRating) * direction;
+        });
+      }
       const page = query.page ?? 1;
       const pageSize = query.pageSize ?? 20;
       const offset = (page - 1) * pageSize;
       return {
-        courses: matched.slice(offset, offset + pageSize).map(publicCourse),
+        courses: matched
+          .slice(offset, offset + pageSize)
+          .map((course) => publicCourse(course, ratings.get(course.id))),
         pagination: { page, pageSize, total: matched.length },
       };
     },
@@ -183,7 +241,8 @@ export async function courseRoutes(app: FastifyInstance): Promise<void> {
       const course = await findCourse(BigInt(params.id));
       if (!course) throw new AppError(404, 'Course was not found.', 'COURSE_NOT_FOUND');
       if (course.archived) await requireAdmin(request);
-      return { course: publicCourse(course) };
+      const ratings = await courseRatings([course.id]);
+      return { course: publicCourse(course, ratings.get(course.id)) };
     },
   );
 

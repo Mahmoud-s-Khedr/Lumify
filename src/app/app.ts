@@ -17,6 +17,7 @@ import { paymentMethodRoutes } from '../modules/payment-methods/routes.js';
 import { courseRoutes } from '../modules/courses/routes.js';
 import { fileRoutes } from '../modules/files/routes.js';
 import { roundRoutes } from '../modules/rounds/routes.js';
+import { reviewRoutes } from '../modules/reviews/routes.js';
 import { sessionRoutes } from '../modules/sessions/routes.js';
 import { studentRoutes } from '../modules/student/routes.js';
 import { userRoutes } from '../modules/users/routes.js';
@@ -145,6 +146,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(paymentMethodRoutes);
   await app.register(fileRoutes);
   await app.register(courseRoutes);
+  await app.register(reviewRoutes);
   await app.register(roundRoutes);
   await app.register(bookingRoutes);
   await app.register(sessionRoutes);

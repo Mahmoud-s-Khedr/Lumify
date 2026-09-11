@@ -15,6 +15,7 @@ describe('Phase 6 and 7 course-delivery and cancellation journeys', () => {
   });
 
   afterEach(async () => {
+    await prisma.courseReview.deleteMany();
     await prisma.booking.deleteMany();
     await prisma.session.deleteMany();
     await prisma.roundMaterial.deleteMany();

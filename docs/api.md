@@ -59,8 +59,8 @@ representations are `GET /docs/json` and `GET /docs/yaml`.
 | Method | Path | Access | Body / purpose |
 | --- | --- | --- | --- |
 | GET | `/payment-methods` | Public | List configured manual-payment methods. |
-| POST | `/payment-methods` | Admin | Create `{ key, value }`; keys are uppercase identifiers such as `VODAFONE_CASH`. |
-| PATCH | `/payment-methods/:key` | Admin | Update `{ value }`. |
+| POST | `/payment-methods` | Admin | Create `{ key, value, description }`; keys are uppercase identifiers such as `VODAFONE_CASH`. |
+| PATCH | `/payment-methods/:key` | Admin | Update one or both of `{ value?, description? }`. |
 | DELETE | `/payment-methods/:key` | Admin | Delete a payment method. |
 
 ## Files
@@ -75,8 +75,8 @@ representations are `GET /docs/json` and `GET /docs/yaml`.
 
 | Method | Path | Access | Body / purpose |
 | --- | --- | --- | --- |
-| GET | `/courses` | Public; Admin when `archived` is supplied | List active courses. Query: `q?`, `page?` (default `1`), `pageSize?` (default `20`, max `100`), and `archived=true|false` (admin only). |
-| GET | `/courses/:id` | Public for active courses; Admin for archived | Get course details. |
+| GET | `/courses` | Public; Admin when `archived` is supplied | List active courses. Query: `q?`, `page?` (default `1`), `pageSize?` (default `20`, max `100`), `minRating?` (1–5), `sort=rating_desc\|rating_asc`, and `archived=true\|false` (admin only). Course results include approved-review `averageRating` (or `null`) and `reviewCount`. |
+| GET | `/courses/:id` | Public for active courses; Admin for archived | Get course details, including approved-review rating summary. |
 | POST | `/courses` | Admin | Create a course. Required: `{ title, price }`; optional: `description`, `outcomes`, `skills`, `prerequisiteSkills`, `prerequisiteCourseId`, `demoVideoUrl`, `imageFileIds`. |
 | PATCH | `/courses/:id` | Admin | Update one or more create fields, plus `archived`. |
 | DELETE | `/courses/:id` | Admin | Delete a course that has no rounds. Courses with rounds must be archived instead. |
@@ -87,8 +87,8 @@ representations are `GET /docs/json` and `GET /docs/yaml`.
 
 | Method | Path | Access | Body / purpose |
 | --- | --- | --- | --- |
-| GET | `/courses/:courseId/rounds` | Public for active courses; Admin for archived | List a course's rounds. |
-| GET | `/rounds/:id` | Public for active courses; Admin for archived | Get a round and its weekly schedule. |
+| GET | `/courses/:courseId/rounds` | Public for active courses; Admin for archived | List only upcoming, non-full rounds. Each round includes `confirmedBooked`, `emptySeats`, and `availability` (`AVAILABLE` or `FULL`). Admins may use `includeUnavailable=true` to list every round. |
+| GET | `/rounds/:id` | Public for active courses; Admin for archived | Get a round and its weekly schedule, capacity counts, and availability. |
 | POST | `/courses/:courseId/rounds` | Admin | Create `{ startDate, endDate, capacity, schedules? }`; each schedule is `{ weekday, startTime }`. |
 | PATCH | `/rounds/:id` | Admin | Update one or more of `{ startDate, endDate, capacity }`. Dates cannot change after bookings exist. |
 | DELETE | `/rounds/:id` | Admin | Delete a round with no bookings. |
@@ -122,7 +122,7 @@ representations are `GET /docs/json` and `GET /docs/yaml`.
 | Method | Path | Access | Body / purpose |
 | --- | --- | --- | --- |
 | POST | `/rounds/:id/bookings` | Student | Book an upcoming available round. The student's profile must have a phone number. |
-| POST | `/bookings/:id/payment` | Student owner | Submit or resubmit manual-payment evidence: `{ paymentMethodKey, receiptFileId }`. The receipt must be the student's completed `PAYMENT_RECEIPT` upload. |
+| POST | `/bookings/:id/payment` | Student owner | Submit or resubmit manual-payment evidence: `{ paymentMethodKey, receiptFileId, transactionReference? }`. Set `transactionReference` to `null` or omit it to clear it. The receipt must be the student's completed `PAYMENT_RECEIPT` upload. Booking owner/admin payloads include it. |
 | GET | `/bookings` | Student | List the current student's bookings. Optional query: `bookingState=PENDING|REJECTED|CANCELLED` and `roundState=UPCOMING|IN_PROGRESS|FINISHED`. |
 | GET | `/admin/bookings` | Admin | List bookings for review. Optional query: `bookingState=PENDING|REJECTED|CANCELLED`. |
 | POST | `/admin/bookings/:id/approve` | Admin | Approve a pending payment review. Optional body `{ adminNote? }`. |
@@ -137,3 +137,20 @@ The API response field `status` uses internal values such as `PENDING_PAYMENT`,
 `PENDING_REVIEW`, `PAYMENT_REJECTED`, `CONFIRMED`, `CANCELLATION_REQUESTED`, and
 `CANCELLED`. The list-filter field `bookingState` groups the first two as `PENDING` and
 `PAYMENT_REJECTED` as `REJECTED`.
+
+## Course reviews
+
+Students can submit one review per course only after a booking in one of that course's rounds is
+confirmed. A review has `{ rating, comment }`, where rating is an integer from 1 through 5. New
+and revised reviews are `PENDING`; only `APPROVED` reviews are public and count toward course
+ratings.
+
+| Method | Path | Access | Body / purpose |
+| --- | --- | --- | --- |
+| GET | `/courses/:courseId/reviews` | Public for active courses; Admin for archived | Paginate approved reviews with `page?` and `pageSize?`. |
+| GET | `/courses/:courseId/reviews/me` | Student | Get the student's own review, including moderation status and note. |
+| POST | `/courses/:courseId/reviews` | Eligible student | Submit `{ rating, comment }` for moderation. |
+| PATCH | `/courses/:courseId/reviews/me` | Eligible student | Revise `{ rating, comment }`; resubmits the review as pending and clears prior moderation data. |
+| GET | `/admin/reviews` | Admin | Paginate reviews for moderation. Optional `courseId`, `status=PENDING\|APPROVED\|REJECTED`, `page`, and `pageSize`. |
+| POST | `/admin/reviews/:id/approve` | Admin | Approve a pending review. Optional `{ adminNote? }`. |
+| POST | `/admin/reviews/:id/reject` | Admin | Reject a pending review. Optional `{ adminNote? }`. |

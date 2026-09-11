@@ -12,6 +12,7 @@ describe('Phase 3 file and course journeys', () => {
   });
 
   afterEach(async () => {
+    await prisma.courseReview.deleteMany();
     await prisma.courseImage.deleteMany();
     await prisma.course.deleteMany();
     await prisma.file.deleteMany();
