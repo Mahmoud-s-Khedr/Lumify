@@ -54,6 +54,32 @@ representations are `GET /docs/json` and `GET /docs/yaml`.
 | --- | --- | --- | --- |
 | GET | `/student/dashboard` | Student | Return the current student's name, confirmed-round summaries (with the next future session if any), up to four newest active courses not already confirmed-enrolled, and up to three newest eligible recording summaries. The response excludes join URLs, WhatsApp links, booking/payment data, receipts, and other students' data. |
 
+## Student course pages
+
+Both endpoints below require a student token. They include enrollments with booking status
+`CONFIRMED` or `CANCELLATION_REQUESTED`; pending, rejected, and cancelled bookings do not have
+access. Administrators receive `403`.
+
+| Method | Path | Access | Body / purpose |
+| --- | --- | --- | --- |
+| GET | `/student/courses` | Student | List card-ready accessible course rounds. Query: `q?` (case-insensitive course-title match), `roundState=UPCOMING\|IN_PROGRESS\|FINISHED`, `recordings=AVAILABLE\|NONE`, `page?` (default `1`), and `pageSize?` (default `20`, max `100`). Results sort in-progress first, then upcoming by nearest start date, then finished by most recent end date. |
+| GET | `/student/rounds/:id` | Enrolled student | Return the enrolled course and round page data. A missing round returns `404`; a round without an accessible enrollment returns `403`. |
+
+`GET /student/courses` returns `{ courses, pagination }`. Each course card contains
+`courseId`, `title`, `image` (the first course-image file metadata and download URL, or `null`),
+`roundId`, `startDate`, `endDate`, calculated `state`, `nextSession` (or `null`), and
+`recordingCount`. `AVAILABLE` means one or more sessions have a non-null `recordingUrl`, even if
+the session is in the future; `NONE` means no session has one.
+
+`GET /student/rounds/:id` returns `{ course, round, sessions, materials }`. `course` contains
+`id`, `title`, and `description`; `round` contains `id`, dates, calculated `state`, and weekly
+`schedules`; sessions are chronological and expose only `id`, `title`, `sessionDate`, and
+`recordingUrl`. Materials use the existing material shape (`id`, `title`, `kind`, `file`,
+`externalUrl`, `createdAt`), including file metadata and its protected download URL. This payload
+never includes live-join, WhatsApp, or joining-instruction values. Use `GET /rounds/:id/join`
+when the student selects a session to join; its `actions.live.url` and `actions.whatsapp.url` are
+the delivery links.
+
 ## Payment methods
 
 | Method | Path | Access | Body / purpose |
