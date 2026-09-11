@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { requireAdmin, requireUser } from '../../common/authorization/auth.js';
+import { requireAdmin } from '../../common/authorization/auth.js';
 import { AppError } from '../../common/errors/app-error.js';
 import { parseRequest } from '../../common/validation/request.js';
 import { prisma } from '../../infrastructure/database/prisma.js';
@@ -20,8 +20,7 @@ export async function paymentMethodRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     '/payment-methods',
     { schema: { tags: ['Payment methods'], summary: 'List configured payment methods' } },
-    async (request) => {
-      await requireUser(request);
+    async () => {
       return { paymentMethods: await prisma.paymentMethod.findMany({ orderBy: { key: 'asc' } }) };
     },
   );

@@ -15,6 +15,7 @@ import {
   revokeRefreshSession,
   rotateRefreshSession,
   saveRefreshToken,
+  verifyOtp,
 } from './service.js';
 
 const credentialsSchema = z.object({
@@ -230,6 +231,26 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         data: { passwordHash: await hashPassword(body.newPassword) },
       });
       await revokeAllRefreshSessions(user.id);
+      return reply.code(204).send();
+    },
+  );
+
+  app.post(
+    '/auth/verify-reset-code',
+    { schema: { tags: ['Authentication'], summary: 'Verify a password reset OTP' } },
+    async (request, reply) => {
+      const body = parseRequest(otpSchema, request.body);
+      const user = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
+      if (
+        !user ||
+        !(await verifyOtp({
+          userId: user.id,
+          type: AuthTokenType.PASSWORD_RESET,
+          code: body.code,
+        }))
+      ) {
+        throw new AppError(400, 'The reset code is invalid or expired.', 'INVALID_OTP');
+      }
       return reply.code(204).send();
     },
   );

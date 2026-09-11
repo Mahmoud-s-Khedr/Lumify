@@ -69,6 +69,11 @@ describe('Phase 2 authentication and configuration journeys', () => {
     });
     const { otp } = forgot.body;
     expect(otp).toMatch(/^\d{6}$/);
+    const verification = await api('/auth/verify-reset-code', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'student@example.com', code: otp }),
+    });
+    expect(verification.status).toBe(204);
     const reset = await api('/auth/reset-password', {
       method: 'POST',
       body: JSON.stringify({
@@ -78,6 +83,12 @@ describe('Phase 2 authentication and configuration journeys', () => {
       }),
     });
     expect(reset.status).toBe(204);
+
+    const consumedCode = await api('/auth/verify-reset-code', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'student@example.com', code: otp }),
+    });
+    expect(consumedCode.status).toBe(400);
 
     const oldLogin = await api('/auth/login', {
       method: 'POST',
@@ -91,7 +102,7 @@ describe('Phase 2 authentication and configuration journeys', () => {
     expect(newLogin.status).toBe(200);
   });
 
-  it('enforces roles and lets an admin manage payment methods visible to students', async () => {
+  it('enforces roles and lets an admin manage publicly visible payment methods', async () => {
     const [student, admin] = await Promise.all([
       prisma.user.create({
         data: {
@@ -147,7 +158,6 @@ describe('Phase 2 authentication and configuration journeys', () => {
     expect(created.status).toBe(201);
     const listed = await api('/payment-methods', {
       method: 'GET',
-      headers: { authorization: `Bearer ${studentToken}` },
     });
     expect(listed.status).toBe(200);
     expect(listed.body).toMatchObject({

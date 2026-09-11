@@ -120,7 +120,7 @@ Configure the private R2 bucket CORS policy for the frontend origins in `CORS_OR
 | `/docs/json`       | OpenAPI JSON document.                                               |
 | `/auth/*`          | Registration, OTP verification, login, sessions, and password flows. |
 | `/users/me`        | Read and update the authenticated user profile.                      |
-| `/payment-methods` | Authenticated listing and admin management.                          |
+| `/payment-methods` | Public listing and admin management.                                 |
 | `/files/*`         | Signed image/document uploads and authorized private-file reads.     |
 | `/courses`         | Public catalogue plus administrator course management.               |
 | `/rounds/*`        | Rounds, schedules, protected materials, join payloads, and sessions. |

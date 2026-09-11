@@ -41,6 +41,25 @@ export async function consumeOtp(input: {
   type: AuthTokenType;
   code: string;
 }): Promise<boolean> {
+  const token = await findValidOtp(input);
+  if (!token) return false;
+  await prisma.authToken.deleteMany({ where: { userId: input.userId, type: input.type } });
+  return true;
+}
+
+/**
+ * Checks an OTP without consuming it. Use this when the client must complete a
+ * later action with the same code, such as the password-reset confirmation step.
+ */
+export async function verifyOtp(input: {
+  userId: bigint;
+  type: AuthTokenType;
+  code: string;
+}): Promise<boolean> {
+  return Boolean(await findValidOtp(input));
+}
+
+async function findValidOtp(input: { userId: bigint; type: AuthTokenType; code: string }) {
   const token = await prisma.authToken.findFirst({
     where: {
       userId: input.userId,
@@ -50,9 +69,7 @@ export async function consumeOtp(input: {
     },
     orderBy: { createdAt: 'desc' },
   });
-  if (!token) return false;
-  await prisma.authToken.deleteMany({ where: { userId: input.userId, type: input.type } });
-  return true;
+  return token;
 }
 
 export async function createRefreshSession(userId: bigint): Promise<bigint> {
