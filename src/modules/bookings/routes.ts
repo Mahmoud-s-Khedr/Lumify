@@ -4,9 +4,11 @@ import { z } from 'zod';
 
 import { requireAdmin, requireUser } from '../../common/authorization/auth.js';
 import {
+  canCancelBooking,
   calculateAvailableSeats,
   calculateRoundState,
   canTransitionBooking,
+  isPendingBooking,
 } from '../../common/business/bookings.js';
 import { AppError } from '../../common/errors/app-error.js';
 import { parseRequest } from '../../common/validation/request.js';
@@ -439,9 +441,9 @@ export async function bookingRoutes(app: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Cancellations'],
-        summary: 'Request cancellation of a confirmed booking',
+        summary: 'Cancel an eligible booking',
         description:
-          'Course access remains available until an administrator completes the external refund and cancellation.',
+          'Pending bookings are cancelled immediately. Confirmed bookings can request cancellation before a round starts, or during a round with fewer than two sessions; access remains available until an administrator completes the external refund and cancellation.',
       },
     },
     async (request) => {
@@ -457,21 +459,48 @@ export async function bookingRoutes(app: FastifyInstance): Promise<void> {
         await tx.$queryRaw<Array<{ id: bigint }>>`
           SELECT id FROM bookings WHERE id = ${bookingId} FOR UPDATE
         `;
-        const current = await tx.booking.findFirst({ where: { id: bookingId, studentId } });
+        const current = await tx.booking.findFirst({
+          where: { id: bookingId, studentId },
+          include: {
+            round: {
+              select: {
+                startDate: true,
+                endDate: true,
+                _count: { select: { sessions: true } },
+              },
+            },
+          },
+        });
         if (!current) throw new AppError(404, 'Booking was not found.', 'BOOKING_NOT_FOUND');
-        if (!canTransitionBooking(current.status, 'CANCELLATION_REQUESTED'))
+        const nextStatus = isPendingBooking(current.status)
+          ? 'CANCELLED'
+          : 'CANCELLATION_REQUESTED';
+        if (!canTransitionBooking(current.status, nextStatus))
           throw new AppError(
             409,
-            'Only a confirmed booking can be cancelled.',
+            'Only a pending or confirmed booking can be cancelled.',
             'INVALID_BOOKING_TRANSITION',
+          );
+        if (
+          !canCancelBooking(
+            current.status,
+            current.round,
+            current.round._count.sessions,
+            calendarToday(),
+          )
+        )
+          throw new AppError(
+            409,
+            'A confirmed booking can be cancelled only before the round starts or before its second session.',
+            'CANCELLATION_NOT_ALLOWED',
           );
         const booking = await tx.booking.update({
           where: { id: bookingId },
           data: {
-            status: 'CANCELLATION_REQUESTED',
+            status: nextStatus,
             cancellationReason: body.reason,
             adminNote: null,
-            cancelledAt: null,
+            cancelledAt: nextStatus === 'CANCELLED' ? new Date() : null,
           },
           include: bookingInclude,
         });

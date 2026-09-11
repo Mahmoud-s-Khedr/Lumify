@@ -303,4 +303,119 @@ describe('Phase 6 and 7 course-delivery and cancellation journeys', () => {
     );
     expect(duplicateCompletion.status).toBe(409);
   });
+
+  it('enforces cancellation eligibility from booking state, round state, and session count', async () => {
+    const { student, outsider, course, studentHeaders, outsiderHeaders } = await fixture();
+    const [upcoming, pending, inProgress, finished] = await Promise.all([
+      prisma.courseRound.create({
+        data: {
+          courseId: course.id,
+          startDate: dateOffset(2),
+          endDate: dateOffset(20),
+          capacity: 10,
+        },
+      }),
+      prisma.courseRound.create({
+        data: {
+          courseId: course.id,
+          startDate: dateOffset(-10),
+          endDate: dateOffset(-2),
+          capacity: 10,
+        },
+      }),
+      prisma.courseRound.create({
+        data: {
+          courseId: course.id,
+          startDate: dateOffset(-1),
+          endDate: dateOffset(20),
+          capacity: 10,
+        },
+      }),
+      prisma.courseRound.create({
+        data: {
+          courseId: course.id,
+          startDate: dateOffset(-20),
+          endDate: dateOffset(-2),
+          capacity: 10,
+        },
+      }),
+    ]);
+    const [upcomingBooking, pendingBooking, inProgressBooking, finishedBooking] = await Promise.all(
+      [
+        prisma.booking.create({
+          data: { studentId: student.id, roundId: upcoming.id, price: 800, status: 'CONFIRMED' },
+        }),
+        prisma.booking.create({
+          data: {
+            studentId: student.id,
+            roundId: pending.id,
+            price: 800,
+            status: 'PENDING_PAYMENT',
+          },
+        }),
+        prisma.booking.create({
+          data: {
+            studentId: outsider.id,
+            roundId: inProgress.id,
+            price: 800,
+            status: 'CONFIRMED',
+          },
+        }),
+        prisma.booking.create({
+          data: { studentId: student.id, roundId: finished.id, price: 800, status: 'CONFIRMED' },
+        }),
+      ],
+    );
+    await prisma.session.createMany({
+      data: [
+        { roundId: inProgress.id, title: 'Session 1', sessionDate: dateOffset(-1) },
+        { roundId: inProgress.id, title: 'Session 2', sessionDate: dateOffset(0) },
+      ],
+    });
+
+    const upcomingCancellation = await api<{ booking: { status: string } }>(
+      `/bookings/${upcomingBooking.id.toString()}/cancellation`,
+      {
+        method: 'POST',
+        headers: studentHeaders,
+        body: JSON.stringify({ reason: 'Cannot attend.' }),
+      },
+    );
+    expect(upcomingCancellation.status).toBe(200);
+    expect(upcomingCancellation.body.booking.status).toBe('CANCELLATION_REQUESTED');
+
+    const pendingCancellation = await api<{ booking: { status: string; cancelledAt: string } }>(
+      `/bookings/${pendingBooking.id.toString()}/cancellation`,
+      {
+        method: 'POST',
+        headers: studentHeaders,
+        body: JSON.stringify({ reason: 'No longer needed.' }),
+      },
+    );
+    expect(pendingCancellation.status).toBe(200);
+    expect(pendingCancellation.body.booking).toMatchObject({ status: 'CANCELLED' });
+    expect(pendingCancellation.body.booking.cancelledAt).toEqual(expect.any(String));
+
+    const lateInProgressCancellation = await api(
+      `/bookings/${inProgressBooking.id.toString()}/cancellation`,
+      {
+        method: 'POST',
+        headers: outsiderHeaders,
+        body: JSON.stringify({ reason: 'Cannot attend.' }),
+      },
+    );
+    expect(lateInProgressCancellation.status).toBe(409);
+    expect(lateInProgressCancellation.body).toMatchObject({ error: 'CANCELLATION_NOT_ALLOWED' });
+
+    const finishedCancellation = await api(
+      `/bookings/${finishedBooking.id.toString()}/cancellation`,
+      {
+        method: 'POST',
+        headers: studentHeaders,
+        body: JSON.stringify({ reason: 'Too late.' }),
+      },
+    );
+    expect(finishedCancellation.status).toBe(409);
+    expect(finishedCancellation.body).toMatchObject({ error: 'CANCELLATION_NOT_ALLOWED' });
+  });
 });

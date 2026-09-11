@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  canCancelBooking,
   calculateAvailableSeats,
   calculateRoundState,
   canTransitionBooking,
@@ -49,11 +50,35 @@ describe('booking and course-delivery business rules', () => {
     expect(canTransitionBooking('PENDING_PAYMENT', 'PENDING_REVIEW')).toBe(true);
     expect(canTransitionBooking('PENDING_REVIEW', 'CONFIRMED')).toBe(true);
     expect(canTransitionBooking('PENDING_REVIEW', 'PAYMENT_REJECTED')).toBe(true);
+    expect(canTransitionBooking('PENDING_PAYMENT', 'CANCELLED')).toBe(true);
+    expect(canTransitionBooking('PENDING_REVIEW', 'CANCELLED')).toBe(true);
     expect(canTransitionBooking('PAYMENT_REJECTED', 'PENDING_REVIEW')).toBe(true);
     expect(canTransitionBooking('CONFIRMED', 'CANCELLATION_REQUESTED')).toBe(true);
     expect(canTransitionBooking('CANCELLATION_REQUESTED', 'CANCELLED')).toBe(true);
     expect(canTransitionBooking('CANCELLED', 'CONFIRMED')).toBe(false);
     expect(canTransitionBooking('PENDING_PAYMENT', 'CONFIRMED')).toBe(false);
+  });
+
+  it('allows cancellation only for pending bookings, upcoming rounds, or early in-progress rounds', () => {
+    const today = new Date('2026-08-22T00:00:00.000Z');
+    const upcoming = {
+      startDate: new Date('2026-08-23T00:00:00.000Z'),
+      endDate: new Date('2026-08-30T00:00:00.000Z'),
+    };
+    const inProgress = {
+      startDate: new Date('2026-08-20T00:00:00.000Z'),
+      endDate: new Date('2026-08-30T00:00:00.000Z'),
+    };
+    const finished = {
+      startDate: new Date('2026-08-01T00:00:00.000Z'),
+      endDate: new Date('2026-08-21T00:00:00.000Z'),
+    };
+
+    expect(canCancelBooking('PENDING_PAYMENT', finished, 4, today)).toBe(true);
+    expect(canCancelBooking('CONFIRMED', upcoming, 0, today)).toBe(true);
+    expect(canCancelBooking('CONFIRMED', inProgress, 1, today)).toBe(true);
+    expect(canCancelBooking('CONFIRMED', inProgress, 2, today)).toBe(false);
+    expect(canCancelBooking('CONFIRMED', finished, 0, today)).toBe(false);
   });
 
   it('retains course access until cancellation is completed', () => {

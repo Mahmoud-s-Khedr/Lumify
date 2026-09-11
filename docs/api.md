@@ -153,7 +153,7 @@ the delivery links.
 | GET | `/admin/bookings` | Admin | List bookings for review. Optional query: `bookingState=PENDING|REJECTED|CANCELLED`. |
 | POST | `/admin/bookings/:id/approve` | Admin | Approve a pending payment review. Optional body `{ adminNote? }`. |
 | POST | `/admin/bookings/:id/reject` | Admin | Reject a pending payment review. Optional body `{ adminNote? }`. |
-| POST | `/bookings/:id/cancellation` | Student owner | Request cancellation of a confirmed booking: `{ reason }`. |
+| POST | `/bookings/:id/cancellation` | Student owner | Cancel a pending booking immediately, or request cancellation of a confirmed booking that is upcoming or has fewer than two sessions in progress: `{ reason }`. |
 | GET | `/admin/cancellations` | Admin | List cancellation requests awaiting external refund. |
 | POST | `/admin/bookings/:id/cancellation/complete` | Admin | Mark an externally refunded cancellation complete. Optional body `{ adminNote? }`. |
 
