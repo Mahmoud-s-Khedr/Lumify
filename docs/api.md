@@ -46,7 +46,7 @@ representations are `GET /docs/json` and `GET /docs/yaml`.
 | Method | Path | Access | Body / purpose |
 | --- | --- | --- | --- |
 | GET | `/users/me` | Authenticated | Get the current user profile. |
-| PATCH | `/users/me` | Authenticated | Update one or more of `{ name?, phone?, contactInfo? }`; `phone` and `contactInfo` may be `null`. |
+| PATCH | `/users/me` | Authenticated | Update one or more of `{ name?, phone?, contactInfo?, avatarFileId? }`; `phone`, `contactInfo`, and `avatarFileId` may be `null`. An avatar file must first be uploaded by the current user. |
 
 ## Student dashboard
 
@@ -93,9 +93,9 @@ the delivery links.
 
 | Method | Path | Access | Body / purpose |
 | --- | --- | --- | --- |
-| POST | `/files/uploads` | Student for receipts; Admin otherwise | Create a signed upload URL. Body: `{ kind, originalName, mimeType }`, where `kind` is `COURSE_IMAGE`, `ROUND_MATERIAL`, or `PAYMENT_RECEIPT`. |
-| POST | `/files/uploads/complete` | Student for receipts; Admin otherwise | Persist an uploaded object. Body: `{ kind, originalName, mimeType, storageKey }` from the preceding endpoint. |
-| GET | `/files/:id/download` | Public for images of active courses; otherwise authorized | Redirect to a signed private download URL. Owners, admins, receipt owners, and enrolled students (for materials) may access protected files. |
+| POST | `/files/uploads` | Authenticated for receipts and avatars; Admin for course images/materials | Create a signed upload URL. Body: `{ kind, originalName, mimeType }`, where `kind` is `COURSE_IMAGE`, `ROUND_MATERIAL`, `PAYMENT_RECEIPT`, or `PROFILE_AVATAR` (JPG/PNG/GIF, max 2 MB). |
+| POST | `/files/uploads/complete` | Authenticated for receipts and avatars; Admin for course images/materials | Persist an uploaded object. Body: `{ kind, originalName, mimeType, storageKey }` from the preceding endpoint. |
+| GET | `/files/:id/download` | Public for images of active courses and attached profile avatars; otherwise authorized | Redirect to a signed private download URL. Owners, admins, receipt owners, and enrolled students (for materials) may access protected files. |
 
 ## Courses
 

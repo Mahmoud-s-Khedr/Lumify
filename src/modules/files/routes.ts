@@ -14,7 +14,9 @@ import { objectStorage } from '../../infrastructure/r2/storage.js';
 const maxCourseImageBytes = 50 * 1024 * 1024;
 const maxRoundMaterialBytes = 100 * 1024 * 1024;
 const maxPaymentReceiptBytes = 10 * 1024 * 1024;
+const maxProfileAvatarBytes = 2 * 1024 * 1024;
 const imageMimeTypes = ['image/jpeg', 'image/png', 'image/webp'] as const;
+const avatarMimeTypes = ['image/jpeg', 'image/png', 'image/gif'] as const;
 const originalNameSchema = z.string().trim().min(1).max(255);
 const materialMimeTypeSchema = z
   .string()
@@ -38,6 +40,11 @@ const uploadSchema = z.discriminatedUnion('kind', [
     originalName: originalNameSchema,
     mimeType: materialMimeTypeSchema,
   }),
+  z.object({
+    kind: z.literal('PROFILE_AVATAR'),
+    originalName: originalNameSchema,
+    mimeType: z.enum(avatarMimeTypes),
+  }),
 ]);
 const completeSchema = z.discriminatedUnion('kind', [
   z.object({
@@ -58,11 +65,26 @@ const completeSchema = z.discriminatedUnion('kind', [
     mimeType: materialMimeTypeSchema,
     storageKey: z.string().regex(/^payment-receipts\/[0-9a-f-]{36}$/),
   }),
+  z.object({
+    kind: z.literal('PROFILE_AVATAR'),
+    originalName: originalNameSchema,
+    mimeType: z.enum(avatarMimeTypes),
+    storageKey: z.string().regex(/^profile-avatars\/[0-9a-f-]{36}$/),
+  }),
 ]);
 const fileIdSchema = z.object({ id: z.string().regex(/^\d+$/) });
 
 function downloadUrl(fileId: bigint): string {
   return `/files/${fileId.toString()}/download`;
+}
+
+function maxSizeFor(
+  kind: 'COURSE_IMAGE' | 'ROUND_MATERIAL' | 'PAYMENT_RECEIPT' | 'PROFILE_AVATAR',
+) {
+  if (kind === 'COURSE_IMAGE') return maxCourseImageBytes;
+  if (kind === 'ROUND_MATERIAL') return maxRoundMaterialBytes;
+  if (kind === 'PAYMENT_RECEIPT') return maxPaymentReceiptBytes;
+  return maxProfileAvatarBytes;
 }
 
 export function publicFile(file: {
@@ -87,26 +109,26 @@ export async function fileRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const identity = await requireUser(request);
       const body = parseRequest(uploadSchema, request.body);
-      if (body.kind !== 'PAYMENT_RECEIPT' && identity.role !== 'ADMIN')
+      if (
+        (body.kind === 'COURSE_IMAGE' || body.kind === 'ROUND_MATERIAL') &&
+        identity.role !== 'ADMIN'
+      )
         throw new AppError(403, 'Administrator access is required.', 'FORBIDDEN');
       const directory =
         body.kind === 'COURSE_IMAGE'
           ? 'course-images'
           : body.kind === 'ROUND_MATERIAL'
             ? 'round-materials'
-            : 'payment-receipts';
+            : body.kind === 'PAYMENT_RECEIPT'
+              ? 'payment-receipts'
+              : 'profile-avatars';
       const storageKey = `${directory}/${randomUUID()}`;
       const uploadUrl = await objectStorage().createUploadUrl(storageKey, body.mimeType);
       return reply.code(201).send({
         storageKey,
         uploadUrl,
         expiresInSeconds: env.R2_PRESIGNED_URL_TTL_SECONDS,
-        maxSizeBytes:
-          body.kind === 'COURSE_IMAGE'
-            ? maxCourseImageBytes
-            : body.kind === 'ROUND_MATERIAL'
-              ? maxRoundMaterialBytes
-              : maxPaymentReceiptBytes,
+        maxSizeBytes: maxSizeFor(body.kind),
       });
     },
   );
@@ -117,7 +139,10 @@ export async function fileRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const identity = await requireUser(request);
       const body = parseRequest(completeSchema, request.body);
-      if (body.kind !== 'PAYMENT_RECEIPT' && identity.role !== 'ADMIN')
+      if (
+        (body.kind === 'COURSE_IMAGE' || body.kind === 'ROUND_MATERIAL') &&
+        identity.role !== 'ADMIN'
+      )
         throw new AppError(403, 'Administrator access is required.', 'FORBIDDEN');
       const storage = objectStorage();
       const object = await storage.head(body.storageKey);
@@ -129,12 +154,7 @@ export async function fileRoutes(app: FastifyInstance): Promise<void> {
           'The uploaded object has an invalid content type.',
           'INVALID_FILE_TYPE',
         );
-      const maxSizeBytes =
-        body.kind === 'COURSE_IMAGE'
-          ? maxCourseImageBytes
-          : body.kind === 'ROUND_MATERIAL'
-            ? maxRoundMaterialBytes
-            : maxPaymentReceiptBytes;
+      const maxSizeBytes = maxSizeFor(body.kind);
       if (object.sizeBytes > BigInt(maxSizeBytes)) {
         await storage.delete(body.storageKey);
         throw new AppError(
@@ -169,12 +189,14 @@ export async function fileRoutes(app: FastifyInstance): Promise<void> {
           courseImages: { include: { course: { select: { archived: true } } } },
           materials: { select: { roundId: true } },
           receipts: { select: { studentId: true } },
+          profileAvatarFor: { select: { id: true } },
         },
       });
       if (!file) throw new AppError(404, 'File was not found.', 'FILE_NOT_FOUND');
 
       const hasPublicCourseImage = file.courseImages.some((image) => !image.course.archived);
-      if (!hasPublicCourseImage) {
+      const hasPublicProfileAvatar = file.profileAvatarFor !== null;
+      if (!hasPublicCourseImage && !hasPublicProfileAvatar) {
         const identity = await requireUser(request);
         const ownsFile = file.uploadedById === BigInt(identity.sub);
         const ownsReceipt = file.receipts.some(

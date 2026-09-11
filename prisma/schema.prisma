@@ -58,6 +58,7 @@ model User {
   email         String   @unique @db.VarChar(255)
   phone         String?  @db.VarChar(50)
   contactInfo   Json?    @map("contact_info")
+  avatarFileId  BigInt?  @unique @map("avatar_file_id")
   passwordHash  String   @map("password_hash")
   role          UserRole @default(STUDENT)
   emailVerified Boolean  @default(false) @map("email_verified")
@@ -67,6 +68,7 @@ model User {
   authTokens AuthToken[]
   authSessions AuthSession[]
   files      File[]      @relation("UploadedFiles")
+  avatarFile File?       @relation("ProfileAvatar", fields: [avatarFileId], references: [id], onDelete: SetNull)
   bookings   Booking[]
   courseReviews CourseReview[]
 
@@ -108,6 +110,7 @@ model File {
   uploadedById BigInt?  @map("uploaded_by")
   createdAt    DateTime @default(now()) @map("created_at")
   uploadedBy   User?    @relation("UploadedFiles", fields: [uploadedById], references: [id])
+  profileAvatarFor User? @relation("ProfileAvatar")
   courseImages CourseImage[]
   materials    RoundMaterial[]
   receipts     Booking[] @relation("ReceiptFile")

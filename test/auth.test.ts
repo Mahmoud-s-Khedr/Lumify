@@ -15,6 +15,7 @@ describe('Phase 2 authentication and configuration journeys', () => {
     await prisma.authSession.deleteMany();
     await prisma.authToken.deleteMany();
     await prisma.paymentMethod.deleteMany();
+    await prisma.file.deleteMany();
     await prisma.user.deleteMany();
   });
 
@@ -100,6 +101,60 @@ describe('Phase 2 authentication and configuration journeys', () => {
       body: JSON.stringify({ email: 'student@example.com', password: 'new-student-password' }),
     });
     expect(newLogin.status).toBe(200);
+  });
+
+  it('lets an authenticated user upload and set a profile avatar', async () => {
+    const user = await prisma.user.create({
+      data: {
+        name: 'Student',
+        email: 'student@example.com',
+        passwordHash: await hashPassword(password),
+        emailVerified: true,
+      },
+    });
+    const login = await api<{ accessToken: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: user.email, password }),
+    });
+    const headers = { authorization: `Bearer ${login.body.accessToken}` };
+
+    const upload = await api<{ storageKey: string; maxSizeBytes: number }>('/files/uploads', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        kind: 'PROFILE_AVATAR',
+        originalName: 'avatar.png',
+        mimeType: 'image/png',
+      }),
+    });
+    expect(upload.status).toBe(201);
+    expect(upload.body.maxSizeBytes).toBe(2 * 1024 * 1024);
+
+    const complete = await api<{ file: { id: string } }>('/files/uploads/complete', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        kind: 'PROFILE_AVATAR',
+        originalName: 'avatar.png',
+        mimeType: 'image/png',
+        storageKey: upload.body.storageKey,
+      }),
+    });
+    expect(complete.status).toBe(201);
+
+    const updated = await api<{ user: { avatar: { id: string; downloadUrl: string } | null } }>(
+      '/users/me',
+      {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ avatarFileId: complete.body.file.id }),
+      },
+    );
+    expect(updated.status).toBe(200);
+    expect(updated.body.user.avatar).toMatchObject({
+      id: complete.body.file.id,
+      downloadUrl: `/files/${complete.body.file.id}/download`,
+    });
   });
 
   it('enforces roles and lets an admin manage publicly visible payment methods', async () => {
