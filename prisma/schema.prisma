@@ -71,6 +71,7 @@ model User {
   avatarFile File?       @relation("ProfileAvatar", fields: [avatarFileId], references: [id], onDelete: SetNull)
   bookings   Booking[]
   courseReviews CourseReview[]
+  communityMessages CommunityMessage[] @relation("CommunityMessageSender")
 
   @@map("users")
 }
@@ -114,6 +115,7 @@ model File {
   courseImages CourseImage[]
   materials    RoundMaterial[]
   receipts     Booking[] @relation("ReceiptFile")
+  communityMessageAttachments CommunityMessageAttachment[]
 
   @@unique([storageKey])
   @@map("files")
@@ -146,6 +148,7 @@ model Course {
   images               CourseImage[]
   rounds               CourseRound[]
   reviews              CourseReview[]
+  communityMessages    CommunityMessage[]
 
   @@index([archived])
   @@map("courses")
@@ -255,6 +258,34 @@ model CourseReview {
   @@index([courseId, status, createdAt])
   @@index([studentId])
   @@map("course_reviews")
+}
+
+model CommunityMessage {
+  id        BigInt    @id @default(autoincrement())
+  courseId  BigInt    @map("course_id")
+  senderId  BigInt    @map("sender_id")
+  content   String?
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  course    Course    @relation(fields: [courseId], references: [id])
+  sender    User      @relation("CommunityMessageSender", fields: [senderId], references: [id])
+  attachments CommunityMessageAttachment[]
+
+  @@index([courseId, createdAt, id])
+  @@index([senderId])
+  @@map("community_messages")
+}
+
+model CommunityMessageAttachment {
+  id        BigInt           @id @default(autoincrement())
+  messageId BigInt           @map("message_id")
+  fileId    BigInt           @unique @map("file_id")
+  createdAt DateTime         @default(now()) @map("created_at")
+  message   CommunityMessage @relation(fields: [messageId], references: [id])
+  file      File             @relation(fields: [fileId], references: [id])
+
+  @@index([messageId])
+  @@map("community_message_attachments")
 }
 
 model Session {

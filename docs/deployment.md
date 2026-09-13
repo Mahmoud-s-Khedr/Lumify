@@ -63,6 +63,10 @@ The production template terminates TLS, redirects HTTP, forwards the trusted pro
 limits request bursts, and caps proxied request bodies. Uploaded assets do not pass through Nginx;
 clients upload them directly to R2 with short-lived signed URLs.
 
+It forwards WebSocket upgrade headers and uses a one-hour read timeout for Socket.IO communities.
+This release supports one API instance. Before horizontally scaling, add a Socket.IO Redis adapter
+or equivalent shared pub/sub so room events are delivered across API instances.
+
 ## 3. Configure backups
 
 Choose a backup directory outside the repository, run one backup, and verify the resulting gzip

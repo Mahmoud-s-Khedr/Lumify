@@ -250,3 +250,27 @@ CREATE TABLE sessions (
     created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+
+-- =========================================================
+-- COURSE COMMUNITY MESSAGES
+-- =========================================================
+
+CREATE TABLE community_messages (
+    id              BIGSERIAL PRIMARY KEY,
+    course_id       BIGINT NOT NULL REFERENCES courses(id),
+    sender_id       BIGINT NOT NULL REFERENCES users(id),
+    content         TEXT,
+    deleted_at      TIMESTAMP,
+    created_at      TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX community_messages_course_created_idx
+    ON community_messages(course_id, created_at, id);
+
+CREATE TABLE community_message_attachments (
+    id              BIGSERIAL PRIMARY KEY,
+    message_id      BIGINT NOT NULL REFERENCES community_messages(id),
+    file_id         BIGINT NOT NULL UNIQUE REFERENCES files(id),
+    created_at      TIMESTAMP NOT NULL DEFAULT NOW()
+);

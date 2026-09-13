@@ -15,8 +15,23 @@ const maxCourseImageBytes = 50 * 1024 * 1024;
 const maxRoundMaterialBytes = 100 * 1024 * 1024;
 const maxPaymentReceiptBytes = 10 * 1024 * 1024;
 const maxProfileAvatarBytes = 2 * 1024 * 1024;
+const maxCommunityAttachmentBytes = 20 * 1024 * 1024;
 const imageMimeTypes = ['image/jpeg', 'image/png', 'image/webp'] as const;
 const avatarMimeTypes = ['image/jpeg', 'image/png', 'image/gif'] as const;
+const communityAttachmentMimeTypes = [
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'text/plain',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+] as const;
 const originalNameSchema = z.string().trim().min(1).max(255);
 const materialMimeTypeSchema = z
   .string()
@@ -45,6 +60,11 @@ const uploadSchema = z.discriminatedUnion('kind', [
     originalName: originalNameSchema,
     mimeType: z.enum(avatarMimeTypes),
   }),
+  z.object({
+    kind: z.literal('COMMUNITY_ATTACHMENT'),
+    originalName: originalNameSchema,
+    mimeType: z.enum(communityAttachmentMimeTypes),
+  }),
 ]);
 const completeSchema = z.discriminatedUnion('kind', [
   z.object({
@@ -71,6 +91,12 @@ const completeSchema = z.discriminatedUnion('kind', [
     mimeType: z.enum(avatarMimeTypes),
     storageKey: z.string().regex(/^profile-avatars\/[0-9a-f-]{36}$/),
   }),
+  z.object({
+    kind: z.literal('COMMUNITY_ATTACHMENT'),
+    originalName: originalNameSchema,
+    mimeType: z.enum(communityAttachmentMimeTypes),
+    storageKey: z.string().regex(/^community-attachments\/[0-9a-f-]{36}$/),
+  }),
 ]);
 const fileIdSchema = z.object({ id: z.string().regex(/^\d+$/) });
 
@@ -79,11 +105,17 @@ function downloadUrl(fileId: bigint): string {
 }
 
 function maxSizeFor(
-  kind: 'COURSE_IMAGE' | 'ROUND_MATERIAL' | 'PAYMENT_RECEIPT' | 'PROFILE_AVATAR',
+  kind:
+    | 'COURSE_IMAGE'
+    | 'ROUND_MATERIAL'
+    | 'PAYMENT_RECEIPT'
+    | 'PROFILE_AVATAR'
+    | 'COMMUNITY_ATTACHMENT',
 ) {
   if (kind === 'COURSE_IMAGE') return maxCourseImageBytes;
   if (kind === 'ROUND_MATERIAL') return maxRoundMaterialBytes;
   if (kind === 'PAYMENT_RECEIPT') return maxPaymentReceiptBytes;
+  if (kind === 'COMMUNITY_ATTACHMENT') return maxCommunityAttachmentBytes;
   return maxProfileAvatarBytes;
 }
 
@@ -121,7 +153,9 @@ export async function fileRoutes(app: FastifyInstance): Promise<void> {
             ? 'round-materials'
             : body.kind === 'PAYMENT_RECEIPT'
               ? 'payment-receipts'
-              : 'profile-avatars';
+              : body.kind === 'PROFILE_AVATAR'
+                ? 'profile-avatars'
+                : 'community-attachments';
       const storageKey = `${directory}/${randomUUID()}`;
       const uploadUrl = await objectStorage().createUploadUrl(storageKey, body.mimeType);
       return reply.code(201).send({
@@ -190,6 +224,9 @@ export async function fileRoutes(app: FastifyInstance): Promise<void> {
           materials: { select: { roundId: true } },
           receipts: { select: { studentId: true } },
           profileAvatarFor: { select: { id: true } },
+          communityMessageAttachments: {
+            select: { message: { select: { courseId: true, deletedAt: true } } },
+          },
         },
       });
       if (!file) throw new AppError(404, 'File was not found.', 'FILE_NOT_FOUND');
@@ -213,7 +250,26 @@ export async function fileRoutes(app: FastifyInstance): Promise<void> {
                 },
               })) > 0
             : false;
-        if (identity.role !== 'ADMIN' && !ownsFile && !ownsReceipt && !hasConfirmedMaterialAccess)
+        const activeCommunityCourseIds = file.communityMessageAttachments
+          .filter((attachment) => attachment.message.deletedAt === null)
+          .map((attachment) => attachment.message.courseId);
+        const hasCommunityAccess =
+          identity.role === 'STUDENT' && activeCommunityCourseIds.length > 0
+            ? (await prisma.booking.count({
+                where: {
+                  studentId: BigInt(identity.sub),
+                  status: 'CONFIRMED',
+                  round: { courseId: { in: activeCommunityCourseIds } },
+                },
+              })) > 0
+            : false;
+        if (
+          identity.role !== 'ADMIN' &&
+          !ownsFile &&
+          !ownsReceipt &&
+          !hasConfirmedMaterialAccess &&
+          !hasCommunityAccess
+        )
           throw new AppError(403, 'You do not have access to this file.', 'FILE_ACCESS_FORBIDDEN');
       }
       return reply.redirect(await objectStorage().createDownloadUrl(file.storageKey));

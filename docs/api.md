@@ -93,9 +93,9 @@ the delivery links.
 
 | Method | Path | Access | Body / purpose |
 | --- | --- | --- | --- |
-| POST | `/files/uploads` | Authenticated for receipts and avatars; Admin for course images/materials | Create a signed upload URL. Body: `{ kind, originalName, mimeType }`, where `kind` is `COURSE_IMAGE`, `ROUND_MATERIAL`, `PAYMENT_RECEIPT`, or `PROFILE_AVATAR` (JPG/PNG/GIF, max 2 MB). |
-| POST | `/files/uploads/complete` | Authenticated for receipts and avatars; Admin for course images/materials | Persist an uploaded object. Body: `{ kind, originalName, mimeType, storageKey }` from the preceding endpoint. |
-| GET | `/files/:id/download` | Public for images of active courses and attached profile avatars; otherwise authorized | Redirect to a signed private download URL. Owners, admins, receipt owners, and enrolled students (for materials) may access protected files. |
+| POST | `/files/uploads` | Authenticated for receipts, avatars, and community attachments; Admin for course images/materials | Create a signed upload URL. `COMMUNITY_ATTACHMENT` permits JPEG, PNG, GIF, WebP, PDF, TXT, DOC/DOCX, XLS/XLSX, and PPT/PPTX, up to 20 MB. |
+| POST | `/files/uploads/complete` | Same as upload | Persist a completed upload. Community files use the private `community-attachments/` key prefix. |
+| GET | `/files/:id/download` | Public for images of active courses and attached profile avatars; otherwise authorized | Community attachments are available to their uploader/admin and currently confirmed community members while the message remains visible. |
 
 ## Courses
 
@@ -105,7 +105,7 @@ the delivery links.
 | GET | `/courses/:id` | Public for active courses; Admin for archived | Get course details, including approved-review rating summary. |
 | POST | `/courses` | Admin | Create a course. Required: `{ title, price }`; optional: `description`, `outcomes`, `skills`, `prerequisiteSkills`, `prerequisiteCourseId`, `demoVideoUrl`, `imageFileIds`. |
 | PATCH | `/courses/:id` | Admin | Update one or more create fields, plus `archived`. |
-| DELETE | `/courses/:id` | Admin | Delete a course that has no rounds. Courses with rounds must be archived instead. |
+| DELETE | `/courses/:id` | Admin | Delete a course with no rounds or retained community history. Courses with rounds or community history must be archived instead. |
 
 ## Rounds and schedules
 
@@ -121,6 +121,34 @@ the delivery links.
 | POST | `/rounds/:id/schedules` | Admin | Add `{ weekday, startTime }`; unavailable after bookings exist. |
 | PATCH | `/rounds/:id/schedules/:scheduleId` | Admin | Update `{ weekday?, startTime? }`; unavailable after bookings exist. |
 | DELETE | `/rounds/:id/schedules/:scheduleId` | Admin | Delete a schedule entry; unavailable after bookings exist. |
+
+## Course communities
+
+Confirmed students may use a course-wide community when they have a currently `CONFIRMED` booking
+in any round of that course. `CANCELLATION_REQUESTED`, cancelled, pending, and unrelated students
+are excluded. Admins are the instructor and may access every community. Responses never expose
+email addresses.
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| GET | `/communities` | Eligible student or admin | List accessible courses, `readOnly` archive state, and latest visible-message preview. |
+| GET | `/communities/:courseId/messages?before=&limit=` | Eligible student or admin | Newest-first history; `limit` defaults to 50 (max 100), and `nextBefore` is the ID for the next page. |
+
+Connect Socket.IO with `{ auth: { token: accessToken } }`. Every community action verifies the
+socket's current access token and re-checks current course membership. Client events are
+`community:join` and `community:leave` with `{ courseId }`, `community:sendMessage` with
+`{ courseId, content?, attachmentIds? }`, and `community:deleteMessage` with `{ messageId }`.
+When an access token expires, the socket stays connected but actions return
+`{ error: "UNAUTHENTICATED", message }` and it receives no community events. Obtain a fresh token
+through the normal authentication flow, then emit `community:reauth` with `{ token }`; its
+successful acknowledgement is `{ ok: true }` and the socket keeps its joined rooms. Text is
+trimmed and limited to 5,000 characters; each message can have at most ten uploaded community
+attachments. Server events are `community:messageCreated` (a complete public message) and
+`community:messageDeleted` (`{ id, courseId }`). Acknowledgement failures use `{ error, message }`.
+Authors can delete their own messages; admins can delete any message. Deleted rows remain for
+audit but disappear from history, and their attachments are no longer downloadable by other
+students. Archived communities are fully read-only: both sending and deleting messages return
+`COMMUNITY_READ_ONLY`.
 
 ## Round materials and course delivery
 

@@ -485,12 +485,26 @@ The SRS requires Arabic/English application localization, but in our architectur
 
 ---
 
+# 22. Course community
+
+```text
+Confirmed booking in any round
+→ open that course's community
+→ fetch newest-first message history
+→ connect Socket.IO with JWT in handshake.auth.token
+→ join community:<courseId>
+→ send text and/or up to ten owned community attachments
+→ all current room members receive messageCreated
+```
+
+Admins can join every course community and delete any message. Students may delete only their own
+messages. Pending, cancellation-requested, cancelled, and unrelated students cannot join. An
+archived course keeps its history readable for eligible users but does not accept new messages.
+
+---
+
 # Explicitly out of scope
 
-* Community.
-* Chat.
-* Messaging.
-* WebSockets.
 * Payment gateways.
 * Automated payment verification.
 * Automated refunds.
@@ -500,8 +514,6 @@ The SRS requires Arabic/English application localization, but in our architectur
 * Backend localization.
 * Multi-instructor support.
 * Multi-tenant support.
-
-The community feature is optional in the SRS and has been intentionally removed. 
 
 # Journey tests
 

@@ -853,6 +853,9 @@ I would consider Lumify backend **done** when:
 10. Nginx + VPS deployment
 ```
 
-The course-community/chat section is optional in the SRS and is deferred from this baseline. It needs its own moderation, real-time delivery, file-access, and retention design before it can be scheduled.
+Course communities are now in scope: currently confirmed students share one course-wide Socket.IO
+room across all rounds, while the admin is the instructor/moderator. Communities retain soft-deleted
+messages for audit, support private image/document attachments, and become read-only when a course
+is archived.
 
 This is the implementation order I would use for the repository as well: each phase should end in a working, testable slice rather than building all database/repository code first and delaying functional workflows until the end.

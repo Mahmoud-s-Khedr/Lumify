@@ -335,14 +335,22 @@ export async function courseRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete(
     '/courses/:id',
-    { schema: { tags: ['Courses'], summary: 'Delete a course that has no rounds' } },
+    {
+      schema: {
+        tags: ['Courses'],
+        summary: 'Delete a course with no rounds or retained community history',
+      },
+    },
     async (request, reply) => {
       await requireAdmin(request);
       const params = parseRequest(paramsSchema, request.params);
       const courseId = BigInt(params.id);
       const course = await prisma.course.findUnique({
         where: { id: courseId },
-        include: { images: { include: { file: true } }, _count: { select: { rounds: true } } },
+        include: {
+          images: { include: { file: true } },
+          _count: { select: { rounds: true, communityMessages: true } },
+        },
       });
       if (!course) throw new AppError(404, 'Course was not found.', 'COURSE_NOT_FOUND');
       if (course._count.rounds > 0)
@@ -350,6 +358,12 @@ export async function courseRoutes(app: FastifyInstance): Promise<void> {
           409,
           'Courses with rounds must be archived instead.',
           'COURSE_HAS_ROUNDS',
+        );
+      if (course._count.communityMessages > 0)
+        throw new AppError(
+          409,
+          'Courses with community history must be archived instead.',
+          'COURSE_HAS_COMMUNITY_HISTORY',
         );
       const orphanedFiles = await prisma.$transaction(async (tx) => {
         await tx.courseImage.deleteMany({ where: { courseId } });

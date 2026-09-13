@@ -24,6 +24,7 @@ The planned backend workflows are implemented:
 - Booking, historical pricing, receipt submission, manual review, and transaction-safe capacity
 - Protected live/WhatsApp join payloads and recorded-session management with historical access
 - Student cancellation requests and admin completion after an external refund
+- Course-wide real-time communities for confirmed students and the instructor, with moderated history and private attachments
 - Runtime OpenAPI/Swagger, PostgreSQL journey tests, Docker, CI, Nginx templates, and backups
 
 See [docs/plan.md](docs/plan.md) for implementation decisions, [docs/schema.md](docs/schema.md)
@@ -126,6 +127,18 @@ Configure the private R2 bucket CORS policy for the frontend origins in `CORS_OR
 | `/rounds/*`        | Rounds, schedules, protected materials, join payloads, and sessions. |
 | `/bookings`        | Student bookings, payment evidence, state filters, and cancellation. |
 | `/admin/*`         | Payment review, cancellation queue/completion, and session listing.  |
+| `/communities`     | Eligible course-community list and cursor-paginated message history. |
+
+## Course communities
+
+Socket.IO is served from the API host. Connect with the JWT access token in
+`handshake.auth.token`, then join a course room with `community:join`. The server verifies the
+access token and current course eligibility for every community action and before each delivery.
+An expired socket stays connected but cannot act or receive community events until the client emits
+`community:reauth` with `{ token: freshAccessToken }`. Confirmed students can access communities
+for any course round they are currently confirmed in; admins can access all communities. Archived
+courses remain readable but prohibit both sending and deleting messages. This deployment runs one
+API instance; horizontal scaling requires a Socket.IO Redis adapter (or equivalent shared pub/sub).
 
 ## Commands
 

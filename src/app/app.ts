@@ -21,6 +21,8 @@ import { reviewRoutes } from '../modules/reviews/routes.js';
 import { sessionRoutes } from '../modules/sessions/routes.js';
 import { studentRoutes } from '../modules/student/routes.js';
 import { userRoutes } from '../modules/users/routes.js';
+import { communityRoutes } from '../modules/communities/routes.js';
+import { registerCommunitySocket } from '../modules/communities/socket.js';
 
 const healthResponseSchema = {
   type: 'object',
@@ -151,6 +153,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(bookingRoutes);
   await app.register(sessionRoutes);
   await app.register(studentRoutes);
+  await app.register(communityRoutes);
+  registerCommunitySocket(app);
 
   return app;
 }
