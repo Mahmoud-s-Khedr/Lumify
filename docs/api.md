@@ -89,6 +89,23 @@ the delivery links.
 | PATCH | `/payment-methods/:key` | Admin | Update one or both of `{ value?, description? }`. |
 | DELETE | `/payment-methods/:key` | Admin | Delete a payment method. |
 
+## Admin students
+
+All endpoints in this section require an administrator. Student-directory rows are account-level
+records; course and round rosters are booking-level records, so a student enrolled in more than
+one round appears once for each enrollment.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/admin/students` | Paginated student directory. Query: `q?` (name, email, or phone), `page?` (default `1`), and `pageSize?` (default `20`, max `100`). Each row includes safe profile data plus total and confirmed enrollment counts. |
+| GET | `/admin/students/:id` | Student profile and complete booking history. IDs that do not identify a student return `STUDENT_NOT_FOUND`. |
+| GET | `/admin/courses/:courseId/students` | Paginated enrollment roster for a course. Query: `q?`, exact raw booking `status?`, `page?`, and `pageSize?`. |
+| GET | `/admin/rounds/:roundId/students` | Paginated enrollment roster for one round, with the same query options. |
+
+Roster responses use the booking payload, including student contact details, course/round context,
+payment evidence metadata, review/cancellation state, and capacity counts. Omitting `status`
+includes every enrollment state; use `status=CONFIRMED` for the active class roster.
+
 ## Files
 
 | Method | Path | Access | Body / purpose |

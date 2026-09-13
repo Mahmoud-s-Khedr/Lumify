@@ -12,6 +12,7 @@ import { AppError } from '../common/errors/app-error.js';
 import { corsOrigin, env } from '../config/env.js';
 import { prisma } from '../infrastructure/database/prisma.js';
 import { authRoutes } from '../modules/auth/routes.js';
+import { adminStudentRoutes } from '../modules/admin-students/routes.js';
 import { bookingRoutes } from '../modules/bookings/routes.js';
 import { paymentMethodRoutes } from '../modules/payment-methods/routes.js';
 import { courseRoutes } from '../modules/courses/routes.js';
@@ -144,6 +145,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   await app.register(authRoutes);
+  await app.register(adminStudentRoutes);
   await app.register(userRoutes);
   await app.register(paymentMethodRoutes);
   await app.register(fileRoutes);
