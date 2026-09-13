@@ -89,13 +89,14 @@ docker compose down --volumes
 | `TRUST_PROXY`                  | `false`                 | Trust reverse-proxy headers; enable only behind the production proxy. |
 | `DATABASE_URL`                 | —                       | PostgreSQL connection URL. Required outside Docker Compose defaults.  |
 | `LOG_LEVEL`                    | `info`                  | Pino log level.                                                       |
-| `CORS_ORIGIN`                  | `http://localhost:5173` | Comma-separated allowed browser origins.                              |
+| `CORS_ORIGIN`                  | `http://localhost:5173` | Comma-separated allowed browser origins; `*` allows all origins.      |
 | `JWT_ACCESS_SECRET`            | Development-only value  | At least 32 characters; required in production.                       |
 | `JWT_REFRESH_SECRET`           | Development-only value  | At least 32 characters; required in production.                       |
 | `ACCESS_TOKEN_TTL`             | `15m`                   | Access-token lifetime.                                                |
 | `REFRESH_TOKEN_TTL_DAYS`       | `30`                    | Rotated refresh-session lifetime.                                     |
 | `OTP_TTL_MINUTES`              | `10`                    | Email-verification/reset OTP lifetime.                                |
 | `EXPOSE_OTP_IN_RESPONSE`       | `false`                 | Return OTPs in API responses; use only for non-public staging.        |
+| `EMAIL_DELIVERY_ENABLED`        | `true`                  | Send OTPs through Resend; set `false` only for non-public staging.    |
 | `RESEND_API_KEY`               | —                       | Resend credential; required in production.                            |
 | `RESEND_FROM_EMAIL`            | —                       | Verified Resend sender; required in production.                       |
 | `R2_ACCOUNT_ID`                | —                       | Cloudflare account ID; required in production.                        |

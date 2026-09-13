@@ -7,7 +7,13 @@ export async function sendOtpEmail(input: {
   code: string;
   purpose: 'EMAIL_VERIFICATION' | 'PASSWORD_RESET';
 }): Promise<void> {
-  if (env.NODE_ENV === 'test' || !env.RESEND_API_KEY || !env.RESEND_FROM_EMAIL) return;
+  if (
+    env.NODE_ENV === 'test' ||
+    !env.EMAIL_DELIVERY_ENABLED ||
+    !env.RESEND_API_KEY ||
+    !env.RESEND_FROM_EMAIL
+  )
+    return;
 
   const subject =
     input.purpose === 'EMAIL_VERIFICATION'

@@ -4,7 +4,7 @@ import { Server } from 'socket.io';
 import type { AccessTokenPayload } from '../../common/authorization/auth.js';
 import { AppError } from '../../common/errors/app-error.js';
 import { parseRequest } from '../../common/validation/request.js';
-import { corsOrigins } from '../../config/env.js';
+import { corsOrigin } from '../../config/env.js';
 import { publicCommunityMessage } from './presenter.js';
 import {
   communityCourseEventSchema,
@@ -108,7 +108,7 @@ async function emitToEligibleMembers(
 export function registerCommunitySocket(app: FastifyInstance): Server {
   const io = new Server(app.server, {
     cors: {
-      origin: corsOrigins.length === 1 ? corsOrigins[0] : corsOrigins,
+      origin: corsOrigin,
       credentials: true,
     },
   });

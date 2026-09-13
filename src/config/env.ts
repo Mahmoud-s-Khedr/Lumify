@@ -22,6 +22,10 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((value) => value === 'true'),
+  EMAIL_DELIVERY_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
   RESEND_API_KEY: z.string().min(1).optional(),
   RESEND_FROM_EMAIL: z.string().email().optional(),
   R2_ACCOUNT_ID: z.string().min(1).optional(),
@@ -46,18 +50,24 @@ if (!parsed.success) {
 const developmentSecret = 'development-only-secret-change-before-production-0000';
 
 if (parsed.data.NODE_ENV === 'production') {
-  for (const key of [
+  const requiredKeys = [
     'JWT_ACCESS_SECRET',
     'JWT_REFRESH_SECRET',
-    'RESEND_API_KEY',
-    'RESEND_FROM_EMAIL',
     'R2_ACCOUNT_ID',
     'R2_BUCKET_NAME',
     'R2_ACCESS_KEY_ID',
     'R2_SECRET_ACCESS_KEY',
-  ] as const) {
+  ] as const;
+  for (const key of requiredKeys) {
     if (!parsed.data[key]) {
       throw new Error(`Invalid environment configuration: ${key} is required in production`);
+    }
+  }
+  if (parsed.data.EMAIL_DELIVERY_ENABLED) {
+    for (const key of ['RESEND_API_KEY', 'RESEND_FROM_EMAIL'] as const) {
+      if (!parsed.data[key]) {
+        throw new Error(`Invalid environment configuration: ${key} is required in production`);
+      }
     }
   }
 }
@@ -69,3 +79,8 @@ export const env = {
 };
 
 export const corsOrigins = env.CORS_ORIGIN.split(',').map((origin) => origin.trim());
+export const corsOrigin = corsOrigins.includes('*')
+  ? true
+  : corsOrigins.length === 1
+    ? corsOrigins[0]
+    : corsOrigins;

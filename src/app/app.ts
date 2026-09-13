@@ -9,7 +9,7 @@ import type { FastifyInstance } from 'fastify';
 import Fastify from 'fastify';
 
 import { AppError } from '../common/errors/app-error.js';
-import { corsOrigins, env } from '../config/env.js';
+import { corsOrigin, env } from '../config/env.js';
 import { prisma } from '../infrastructure/database/prisma.js';
 import { authRoutes } from '../modules/auth/routes.js';
 import { bookingRoutes } from '../modules/bookings/routes.js';
@@ -54,7 +54,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(cookie);
   await app.register(jwt, { secret: env.JWT_ACCESS_SECRET });
   await app.register(cors, {
-    origin: corsOrigins.length === 1 ? corsOrigins[0] : corsOrigins,
+    origin: corsOrigin,
     credentials: true,
   });
   await app.register(helmet);
