@@ -17,8 +17,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-lumify}
       POSTGRES_USER: ${POSTGRES_USER:-lumify}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lumify}
-    ports:
-      - '${POSTGRES_BIND_ADDRESS:-0.0.0.0}:${POSTGRES_PORT:-5432}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
