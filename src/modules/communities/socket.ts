@@ -1,25 +1,25 @@
 import type { FastifyInstance } from 'fastify';
 import { Server } from 'socket.io';
-import { z } from 'zod';
 
 import type { AccessTokenPayload } from '../../common/authorization/auth.js';
 import { AppError } from '../../common/errors/app-error.js';
 import { parseRequest } from '../../common/validation/request.js';
 import { corsOrigins } from '../../config/env.js';
-import { prisma } from '../../infrastructure/database/prisma.js';
 import { publicCommunityMessage } from './presenter.js';
-import { communityRoom, createCommunityMessage, requireCommunityCourse } from './service.js';
+import {
+  communityCourseEventSchema,
+  communityReauthenticateSchema,
+  deleteCommunityMessageSchema,
+  sendCommunityMessageSchema,
+} from './schemas.js';
+import {
+  communityRoom,
+  deleteCommunityMessage,
+  requireCommunityCourse,
+  sendCommunityMessage,
+} from './service.js';
 
 type Acknowledgement = (result: Record<string, unknown>) => unknown;
-
-const idSchema = z.string().regex(/^\d+$/);
-const courseEventSchema = z.object({ courseId: idSchema });
-const sendMessageSchema = courseEventSchema.extend({
-  content: z.string().max(5_000).optional(),
-  attachmentIds: z.array(idSchema).max(10).default([]),
-});
-const deleteMessageSchema = z.object({ messageId: idSchema });
-const reauthenticateSchema = z.object({ token: z.string().min(1) });
 
 function socketError(error: unknown): Record<string, unknown> {
   if (error instanceof AppError) return { error: error.code, message: error.message };
@@ -134,7 +134,7 @@ export function registerCommunitySocket(app: FastifyInstance): Server {
   io.on('connection', (socket) => {
     socket.on('community:reauth', async (payload: unknown, ack?: unknown) => {
       try {
-        const { token } = parseRequest(reauthenticateSchema, payload);
+        const { token } = parseRequest(communityReauthenticateSchema, payload);
         const identity = (await app.jwt.verify(token)) as AccessTokenPayload;
         socket.data.token = token;
         socket.data.identity = identity;
@@ -147,7 +147,7 @@ export function registerCommunitySocket(app: FastifyInstance): Server {
     socket.on('community:join', async (payload: unknown, ack?: unknown) => {
       try {
         const identity = await requireSocketIdentity(app, socket);
-        const { courseId } = parseRequest(courseEventSchema, payload);
+        const { courseId } = parseRequest(communityCourseEventSchema, payload);
         const course = await requireCommunityCourse(BigInt(courseId), identity);
         await socket.join(communityRoom(course.id));
         socketSuccess(ack, { courseId: course.id.toString(), readOnly: course.archived });
@@ -159,7 +159,7 @@ export function registerCommunitySocket(app: FastifyInstance): Server {
     socket.on('community:leave', async (payload: unknown, ack?: unknown) => {
       try {
         const identity = await requireSocketIdentity(app, socket);
-        const { courseId } = parseRequest(courseEventSchema, payload);
+        const { courseId } = parseRequest(communityCourseEventSchema, payload);
         const course = await requireCommunityCourse(BigInt(courseId), identity);
         await socket.leave(communityRoom(course.id));
         socketSuccess(ack, { courseId: course.id.toString() });
@@ -171,26 +171,12 @@ export function registerCommunitySocket(app: FastifyInstance): Server {
     socket.on('community:sendMessage', async (payload: unknown, ack?: unknown) => {
       try {
         const identity = await requireSocketIdentity(app, socket);
-        const body = parseRequest(sendMessageSchema, payload);
-        const content = body.content?.trim() ?? null;
-        const attachmentIds = body.attachmentIds ?? [];
-        if (!content && attachmentIds.length === 0)
-          throw new AppError(400, 'A message needs text or an attachment.', 'VALIDATION_ERROR');
-        if (new Set(attachmentIds).size !== attachmentIds.length)
-          throw new AppError(400, 'An attachment can only be included once.', 'VALIDATION_ERROR');
-
-        const course = await requireCommunityCourse(BigInt(body.courseId), identity);
-        if (course.archived)
-          throw new AppError(
-            403,
-            'Archived course communities are read-only.',
-            'COMMUNITY_READ_ONLY',
-          );
-        const message = await createCommunityMessage({
-          courseId: course.id,
-          senderId: BigInt(identity.sub),
-          content,
-          attachmentIds: attachmentIds.map(BigInt),
+        const body = parseRequest(sendCommunityMessageSchema, payload);
+        const { course, message } = await sendCommunityMessage({
+          courseId: BigInt(body.courseId),
+          identity,
+          content: body.content,
+          attachmentIds: (body.attachmentIds ?? []).map(BigInt),
         });
         const publicMessage = publicCommunityMessage(message);
         await emitToEligibleMembers(app, io, course.id, 'community:messageCreated', publicMessage);
@@ -203,33 +189,8 @@ export function registerCommunitySocket(app: FastifyInstance): Server {
     socket.on('community:deleteMessage', async (payload: unknown, ack?: unknown) => {
       try {
         const identity = await requireSocketIdentity(app, socket);
-        const { messageId } = parseRequest(deleteMessageSchema, payload);
-        const message = await prisma.communityMessage.findUnique({
-          where: { id: BigInt(messageId) },
-          select: { id: true, courseId: true, senderId: true, deletedAt: true },
-        });
-        if (!message) throw new AppError(404, 'Message was not found.', 'MESSAGE_NOT_FOUND');
-        const course = await requireCommunityCourse(message.courseId, identity);
-        if (course.archived)
-          throw new AppError(
-            403,
-            'Archived course communities are read-only.',
-            'COMMUNITY_READ_ONLY',
-          );
-        if (identity.role !== 'ADMIN' && message.senderId !== BigInt(identity.sub))
-          throw new AppError(
-            403,
-            'You can only delete your own messages.',
-            'MESSAGE_DELETE_FORBIDDEN',
-          );
-        if (message.deletedAt)
-          throw new AppError(400, 'Message was already deleted.', 'MESSAGE_ALREADY_DELETED');
-        const deleted = await prisma.communityMessage.updateMany({
-          where: { id: message.id, deletedAt: null },
-          data: { deletedAt: new Date() },
-        });
-        if (deleted.count === 0)
-          throw new AppError(400, 'Message was already deleted.', 'MESSAGE_ALREADY_DELETED');
+        const { messageId } = parseRequest(deleteCommunityMessageSchema, payload);
+        const message = await deleteCommunityMessage({ messageId: BigInt(messageId), identity });
         const event = { id: message.id.toString(), courseId: message.courseId.toString() };
         await emitToEligibleMembers(app, io, message.courseId, 'community:messageDeleted', event);
         socketSuccess(ack, { message: event });

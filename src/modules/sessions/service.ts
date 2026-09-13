@@ -1,21 +1,26 @@
 import type { Prisma, UserRole } from '@prisma/client';
 
-import { courseAccessStatuses } from '../../common/business/bookings.js';
 import { utcCalendarToday } from '../../common/dates/calendar.js';
 import { AppError } from '../../common/errors/app-error.js';
-import { prisma } from '../../infrastructure/database/prisma.js';
+import {
+  countRoundAccess,
+  createSessionRecord,
+  deleteSessionRecord,
+  findRound,
+  findRoundSessions,
+  findSession,
+  updateRoundJoinDetails,
+  updateSessionRecord,
+} from './repository.js';
+import type { sessionInclude } from './repository.js';
 import type { CreateSessionInput, UpdateJoinInput, UpdateSessionInput } from './schemas.js';
 
 export type CourseDeliveryIdentity = { sub: string; role: UserRole };
 
-export const sessionInclude = {
-  round: { include: { course: { select: { id: true, title: true } } } },
-} satisfies Prisma.SessionInclude;
-
 export type SessionWithRound = Prisma.SessionGetPayload<{ include: typeof sessionInclude }>;
 
 export async function findRoundForDelivery(roundId: bigint) {
-  const round = await prisma.courseRound.findUnique({ where: { id: roundId } });
+  const round = await findRound(roundId);
   if (!round) throw new AppError(404, 'Round was not found.', 'ROUND_NOT_FOUND');
   return round;
 }
@@ -25,13 +30,7 @@ export async function requireRoundAccess(
   identity: CourseDeliveryIdentity,
 ): Promise<void> {
   if (identity.role === 'ADMIN') return;
-  const enrolled = await prisma.booking.count({
-    where: {
-      roundId,
-      studentId: BigInt(identity.sub),
-      status: { in: courseAccessStatuses },
-    },
-  });
+  const enrolled = await countRoundAccess(roundId, BigInt(identity.sub));
   if (enrolled === 0)
     throw new AppError(
       403,
@@ -51,30 +50,19 @@ export async function updateJoinDetails(roundId: bigint, input: UpdateJoinInput)
       'Join URLs cannot be added before the round start date.',
       'ROUND_NOT_STARTED',
     );
-  return prisma.courseRound.update({
-    where: { id: round.id },
-    data: {
-      liveJoinUrl: input.liveJoinUrl,
-      whatsappUrl: input.whatsappUrl,
-      joiningInstructions: input.joiningInstructions,
-    },
+  return updateRoundJoinDetails(round.id, {
+    liveJoinUrl: input.liveJoinUrl,
+    whatsappUrl: input.whatsappUrl,
+    joiningInstructions: input.joiningInstructions,
   });
 }
 
 export async function listRoundSessions(roundId: bigint): Promise<SessionWithRound[]> {
-  return prisma.session.findMany({
-    where: { roundId },
-    include: sessionInclude,
-    orderBy: { sessionDate: 'asc' },
-  });
+  return findRoundSessions(roundId, 'asc');
 }
 
 export async function listAdminSessions(roundId?: bigint): Promise<SessionWithRound[]> {
-  return prisma.session.findMany({
-    where: { roundId },
-    include: sessionInclude,
-    orderBy: { sessionDate: 'desc' },
-  });
+  return findRoundSessions(roundId, 'desc');
 }
 
 export async function createSession(
@@ -82,14 +70,11 @@ export async function createSession(
   input: CreateSessionInput,
 ): Promise<SessionWithRound> {
   const round = await findRoundForDelivery(roundId);
-  return prisma.session.create({
-    data: {
-      roundId: round.id,
-      title: input.title,
-      sessionDate: new Date(input.sessionDate),
-      recordingUrl: input.recordingUrl ?? null,
-    },
-    include: sessionInclude,
+  return createSessionRecord({
+    roundId: round.id,
+    title: input.title,
+    sessionDate: new Date(input.sessionDate),
+    recordingUrl: input.recordingUrl ?? null,
   });
 }
 
@@ -97,20 +82,16 @@ export async function updateSession(
   sessionId: bigint,
   input: UpdateSessionInput,
 ): Promise<SessionWithRound> {
-  const exists = await prisma.session.findUnique({ where: { id: sessionId } });
+  const exists = await findSession(sessionId);
   if (!exists) throw new AppError(404, 'Session was not found.', 'SESSION_NOT_FOUND');
-  return prisma.session.update({
-    where: { id: sessionId },
-    data: {
-      title: input.title,
-      sessionDate: input.sessionDate ? new Date(input.sessionDate) : undefined,
-      recordingUrl: input.recordingUrl,
-    },
-    include: sessionInclude,
+  return updateSessionRecord(sessionId, {
+    title: input.title,
+    sessionDate: input.sessionDate ? new Date(input.sessionDate) : undefined,
+    recordingUrl: input.recordingUrl,
   });
 }
 
 export async function deleteSession(sessionId: bigint): Promise<void> {
-  const deleted = await prisma.session.deleteMany({ where: { id: sessionId } });
+  const deleted = await deleteSessionRecord(sessionId);
   if (deleted.count === 0) throw new AppError(404, 'Session was not found.', 'SESSION_NOT_FOUND');
 }

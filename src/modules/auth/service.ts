@@ -5,8 +5,24 @@ import { AuthTokenType, type User } from '@prisma/client';
 import { AppError } from '../../common/errors/app-error.js';
 import { hashPassword, verifyPassword } from '../../common/security/passwords.js';
 import { env } from '../../config/env.js';
-import { prisma } from '../../infrastructure/database/prisma.js';
 import { sendOtpEmail } from '../../infrastructure/resend/mailer.js';
+import {
+  createAdmin,
+  createRefreshSession as createRefreshSessionRecord,
+  createStudent,
+  deleteOtps,
+  findRefreshSession,
+  findUserByEmail,
+  findUserById,
+  findStoredValidOtp,
+  replaceOtp,
+  revokeAllRefreshSessions as revokeAllRefreshSessionRecords,
+  revokeRefreshSession as revokeRefreshSessionRecord,
+  saveRefreshToken as saveRefreshTokenRecord,
+  updateUserPassword,
+  updateUserRole,
+  verifyUserEmail,
+} from './repository.js';
 import type {
   ChangePasswordInput,
   CredentialsInput,
@@ -35,12 +51,7 @@ export async function issueOtp(
   const code = createOtpCode();
   const expiresAt = new Date(Date.now() + env.OTP_TTL_MINUTES * 60_000);
 
-  await prisma.$transaction([
-    prisma.authToken.deleteMany({ where: { userId: user.id, type } }),
-    prisma.authToken.create({
-      data: { userId: user.id, type, tokenHash: hashToken(code), expiresAt },
-    }),
-  ]);
+  await replaceOtp({ userId: user.id, type, tokenHash: hashToken(code), expiresAt });
   await sendOtpEmail({ email: user.email, code, purpose: type });
   return otpForResponse(code);
 }
@@ -52,7 +63,7 @@ export async function consumeOtp(input: {
 }): Promise<boolean> {
   const token = await findValidOtp(input);
   if (!token) return false;
-  await prisma.authToken.deleteMany({ where: { userId: input.userId, type: input.type } });
+  await deleteOtps(input.userId, input.type);
   return true;
 }
 
@@ -69,44 +80,25 @@ export async function verifyOtp(input: {
 }
 
 async function findValidOtp(input: { userId: bigint; type: AuthTokenType; code: string }) {
-  const token = await prisma.authToken.findFirst({
-    where: {
-      userId: input.userId,
-      type: input.type,
-      tokenHash: hashToken(input.code),
-      expiresAt: { gt: new Date() },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
-  return token;
+  return findStoredValidOtp({ ...input, tokenHash: hashToken(input.code), now: new Date() });
 }
 
 export async function createRefreshSession(userId: bigint): Promise<bigint> {
-  const session = await prisma.authSession.create({
-    data: {
-      userId,
-      tokenHash: 'pending',
-      expiresAt: new Date(Date.now() + env.REFRESH_TOKEN_TTL_DAYS * 86_400_000),
-    },
+  return createRefreshSessionRecord({
+    userId,
+    expiresAt: new Date(Date.now() + env.REFRESH_TOKEN_TTL_DAYS * 86_400_000),
   });
-  return session.id;
 }
 
 export async function saveRefreshToken(sessionId: bigint, refreshToken: string): Promise<void> {
-  await prisma.authSession.update({
-    where: { id: sessionId },
-    data: { tokenHash: hashToken(refreshToken) },
-  });
+  await saveRefreshTokenRecord(sessionId, hashToken(refreshToken));
 }
 
 export async function rotateRefreshSession(input: {
   sessionId: bigint;
   refreshToken: string;
 }): Promise<User | null> {
-  const session = await prisma.authSession.findUnique({
-    where: { id: input.sessionId },
-    include: { user: true },
-  });
+  const session = await findRefreshSession(input.sessionId);
   if (
     !session ||
     session.revokedAt ||
@@ -115,22 +107,16 @@ export async function rotateRefreshSession(input: {
   ) {
     return null;
   }
-  await prisma.authSession.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
+  await revokeRefreshSessionRecord(session.id);
   return session.user;
 }
 
 export async function revokeRefreshSession(sessionId: bigint): Promise<void> {
-  await prisma.authSession.updateMany({
-    where: { id: sessionId, revokedAt: null },
-    data: { revokedAt: new Date() },
-  });
+  await revokeRefreshSessionRecord(sessionId);
 }
 
 export async function revokeAllRefreshSessions(userId: bigint): Promise<void> {
-  await prisma.authSession.updateMany({
-    where: { userId, revokedAt: null },
-    data: { revokedAt: new Date() },
-  });
+  await revokeAllRefreshSessionRecords(userId);
 }
 
 export async function registerStudent(input: RegistrationInput): Promise<{
@@ -138,18 +124,24 @@ export async function registerStudent(input: RegistrationInput): Promise<{
   otp: { otp?: string };
 }> {
   const email = input.email.toLowerCase();
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const existing = await findUserByEmail(email);
   if (existing)
-    throw new AppError(409, 'An account with this email already exists.', 'EMAIL_ALREADY_REGISTERED');
+    throw new AppError(
+      409,
+      'An account with this email already exists.',
+      'EMAIL_ALREADY_REGISTERED',
+    );
 
-  const user = await prisma.user.create({
-    data: { name: input.name, email, passwordHash: await hashPassword(input.password) },
+  const user = await createStudent({
+    name: input.name,
+    email,
+    passwordHash: await hashPassword(input.password),
   });
   return { user, otp: await issueOtp(user, AuthTokenType.EMAIL_VERIFICATION) };
 }
 
 export async function verifyEmail(input: OtpInput): Promise<User> {
-  const user = await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
+  const user = await findUserByEmail(input.email.toLowerCase());
   if (
     !user ||
     !(await consumeOtp({
@@ -160,16 +152,16 @@ export async function verifyEmail(input: OtpInput): Promise<User> {
   ) {
     throw new AppError(400, 'The verification code is invalid or expired.', 'INVALID_OTP');
   }
-  return prisma.user.update({ where: { id: user.id }, data: { emailVerified: true } });
+  return verifyUserEmail(user.id);
 }
 
 export async function resendEmailVerification(input: EmailInput): Promise<{ otp?: string }> {
-  const user = await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
+  const user = await findUserByEmail(input.email.toLowerCase());
   return user && !user.emailVerified ? issueOtp(user, AuthTokenType.EMAIL_VERIFICATION) : {};
 }
 
 export async function authenticate(input: CredentialsInput): Promise<User> {
-  const user = await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
+  const user = await findUserByEmail(input.email.toLowerCase());
   if (!user || !(await verifyPassword(input.password, user.passwordHash))) {
     throw new AppError(401, 'Email or password is incorrect.', 'INVALID_CREDENTIALS');
   }
@@ -179,27 +171,24 @@ export async function authenticate(input: CredentialsInput): Promise<User> {
 }
 
 export async function requestPasswordReset(input: EmailInput): Promise<{ otp?: string }> {
-  const user = await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
+  const user = await findUserByEmail(input.email.toLowerCase());
   return user ? issueOtp(user, AuthTokenType.PASSWORD_RESET) : {};
 }
 
 export async function resetPassword(input: ResetPasswordInput): Promise<void> {
-  const user = await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
+  const user = await findUserByEmail(input.email.toLowerCase());
   if (
     !user ||
     !(await consumeOtp({ userId: user.id, type: AuthTokenType.PASSWORD_RESET, code: input.code }))
   ) {
     throw new AppError(400, 'The reset code is invalid or expired.', 'INVALID_OTP');
   }
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { passwordHash: await hashPassword(input.newPassword) },
-  });
+  await updateUserPassword(user.id, await hashPassword(input.newPassword));
   await revokeAllRefreshSessions(user.id);
 }
 
 export async function verifyPasswordResetCode(input: OtpInput): Promise<void> {
-  const user = await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
+  const user = await findUserByEmail(input.email.toLowerCase());
   if (
     !user ||
     !(await verifyOtp({ userId: user.id, type: AuthTokenType.PASSWORD_RESET, code: input.code }))
@@ -209,34 +198,27 @@ export async function verifyPasswordResetCode(input: OtpInput): Promise<void> {
 }
 
 export async function changePassword(userId: bigint, input: ChangePasswordInput): Promise<void> {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const user = await findUserById(userId);
   if (!user || !(await verifyPassword(input.currentPassword, user.passwordHash))) {
     throw new AppError(400, 'The current password is incorrect.', 'INVALID_CURRENT_PASSWORD');
   }
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { passwordHash: await hashPassword(input.newPassword) },
-  });
+  await updateUserPassword(user.id, await hashPassword(input.newPassword));
   await revokeAllRefreshSessions(user.id);
 }
 
 export async function bootstrapAdmin(): Promise<void> {
   if (!env.ADMIN_EMAIL || !env.ADMIN_PASSWORD) return;
   const email = env.ADMIN_EMAIL.toLowerCase();
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const existing = await findUserByEmail(email);
   if (existing) {
     if (existing.role !== 'ADMIN') {
-      await prisma.user.update({ where: { id: existing.id }, data: { role: 'ADMIN' } });
+      await updateUserRole(existing.id, 'ADMIN');
     }
     return;
   }
-  await prisma.user.create({
-    data: {
-      name: env.ADMIN_NAME,
-      email,
-      passwordHash: await hashPassword(env.ADMIN_PASSWORD),
-      role: 'ADMIN',
-      emailVerified: true,
-    },
+  await createAdmin({
+    name: env.ADMIN_NAME,
+    email,
+    passwordHash: await hashPassword(env.ADMIN_PASSWORD),
   });
 }

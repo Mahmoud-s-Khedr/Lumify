@@ -1,15 +1,14 @@
 import { Prisma } from '@prisma/client';
 
 import { AppError } from '../../common/errors/app-error.js';
-import { prisma } from '../../infrastructure/database/prisma.js';
+import { findOwnedProfileAvatar, findUserWithAvatar, updateUserProfile } from './repository.js';
+import type { userInclude } from './repository.js';
 import type { UpdateProfileInput } from './schemas.js';
-
-const userInclude = { avatarFile: true } satisfies Prisma.UserInclude;
 
 export type UserWithAvatar = Prisma.UserGetPayload<{ include: typeof userInclude }>;
 
 export async function findCurrentUser(userId: bigint): Promise<UserWithAvatar> {
-  const user = await prisma.user.findUnique({ where: { id: userId }, include: userInclude });
+  const user = await findUserWithAvatar(userId);
   if (!user) throw new AppError(401, 'Authentication is required.', 'UNAUTHENTICATED');
   return user;
 }
@@ -29,15 +28,7 @@ export async function updateCurrentUser(
     if (input.avatarFileId === null) {
       data.avatarFile = { disconnect: true };
     } else {
-      const avatar = await prisma.file.findFirst({
-        where: {
-          id: BigInt(input.avatarFileId),
-          uploadedById: userId,
-          storageKey: { startsWith: 'profile-avatars/' },
-          mimeType: { in: ['image/jpeg', 'image/png', 'image/gif'] },
-          sizeBytes: { lte: BigInt(2 * 1024 * 1024) },
-        },
-      });
+      const avatar = await findOwnedProfileAvatar(BigInt(input.avatarFileId), userId);
       if (!avatar)
         throw new AppError(
           400,
@@ -47,5 +38,5 @@ export async function updateCurrentUser(
       data.avatarFile = { connect: { id: avatar.id } };
     }
   }
-  return prisma.user.update({ where: { id: userId }, data, include: userInclude });
+  return updateUserProfile(userId, data);
 }

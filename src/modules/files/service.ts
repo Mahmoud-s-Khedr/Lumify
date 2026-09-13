@@ -2,11 +2,16 @@ import { randomUUID } from 'node:crypto';
 
 import type { Prisma, UserRole } from '@prisma/client';
 
-import { courseAccessStatuses } from '../../common/business/bookings.js';
 import { AppError } from '../../common/errors/app-error.js';
 import { env } from '../../config/env.js';
-import { prisma } from '../../infrastructure/database/prisma.js';
 import { objectStorage } from '../../infrastructure/r2/storage.js';
+import {
+  countCommunityAccess,
+  countMaterialAccess,
+  createFileRecord,
+  findFileWithDownloadAccess,
+} from './repository.js';
+import type { fileDownloadInclude as fileDownloadIncludeType } from './repository.js';
 import type { CompleteUploadInput, FileKind, UploadInput } from './schemas.js';
 
 const maxCourseImageBytes = 50 * 1024 * 1024;
@@ -17,17 +22,9 @@ const maxCommunityAttachmentBytes = 20 * 1024 * 1024;
 
 export type FileAccessIdentity = { sub: string; role: UserRole };
 
-const fileDownloadInclude = {
-  courseImages: { include: { course: { select: { archived: true } } } },
-  materials: { select: { roundId: true } },
-  receipts: { select: { studentId: true } },
-  profileAvatarFor: { select: { id: true } },
-  communityMessageAttachments: {
-    select: { message: { select: { courseId: true, deletedAt: true } } },
-  },
-} satisfies Prisma.FileInclude;
-
-export type FileWithDownloadAccess = Prisma.FileGetPayload<{ include: typeof fileDownloadInclude }>;
+export type FileWithDownloadAccess = Prisma.FileGetPayload<{
+  include: typeof fileDownloadIncludeType;
+}>;
 
 export function requiresAdminUpload(kind: FileKind): boolean {
   return kind === 'COURSE_IMAGE' || kind === 'ROUND_MATERIAL';
@@ -79,22 +76,17 @@ export async function completeUpload(input: CompleteUploadInput, uploaderId: big
     );
   }
   if (object.sizeBytes === 0n) throw new AppError(400, 'The uploaded file is empty.', 'EMPTY_FILE');
-  return prisma.file.create({
-    data: {
-      storageKey: input.storageKey,
-      originalName: input.originalName,
-      mimeType: input.mimeType,
-      sizeBytes: object.sizeBytes,
-      uploadedById: uploaderId,
-    },
+  return createFileRecord({
+    storageKey: input.storageKey,
+    originalName: input.originalName,
+    mimeType: input.mimeType,
+    sizeBytes: object.sizeBytes,
+    uploadedById: uploaderId,
   });
 }
 
 export async function findFileForDownload(fileId: bigint): Promise<FileWithDownloadAccess> {
-  const file = await prisma.file.findUnique({
-    where: { id: fileId },
-    include: fileDownloadInclude,
-  });
+  const file = await findFileWithDownloadAccess(fileId);
   if (!file) throw new AppError(404, 'File was not found.', 'FILE_NOT_FOUND');
   return file;
 }
@@ -115,26 +107,14 @@ export async function assertFileDownloadAccess(
   const materialRoundIds = file.materials.map((material) => material.roundId);
   const hasConfirmedMaterialAccess =
     identity.role === 'STUDENT' && materialRoundIds.length > 0
-      ? (await prisma.booking.count({
-          where: {
-            studentId: userId,
-            roundId: { in: materialRoundIds },
-            status: { in: courseAccessStatuses },
-          },
-        })) > 0
+      ? (await countMaterialAccess(userId, materialRoundIds)) > 0
       : false;
   const activeCommunityCourseIds = file.communityMessageAttachments
     .filter((attachment) => attachment.message.deletedAt === null)
     .map((attachment) => attachment.message.courseId);
   const hasCommunityAccess =
     identity.role === 'STUDENT' && activeCommunityCourseIds.length > 0
-      ? (await prisma.booking.count({
-          where: {
-            studentId: userId,
-            status: 'CONFIRMED',
-            round: { courseId: { in: activeCommunityCourseIds } },
-          },
-        })) > 0
+      ? (await countCommunityAccess(userId, activeCommunityCourseIds)) > 0
       : false;
   if (
     identity.role !== 'ADMIN' &&

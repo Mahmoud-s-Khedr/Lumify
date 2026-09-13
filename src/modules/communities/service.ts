@@ -5,6 +5,7 @@ import { prisma } from '../../infrastructure/database/prisma.js';
 import type { MessageHistoryQuery } from './schemas.js';
 
 export type CommunityIdentity = { sub: string; role: UserRole };
+type CommunityCourse = { id: bigint; title: string; archived: boolean };
 
 export const communityMessageInclude = {
   sender: {
@@ -51,7 +52,7 @@ export function communityRoom(courseId: bigint | string): string {
 export async function requireCommunityCourse(
   courseId: bigint,
   identity: CommunityIdentity,
-): Promise<{ id: bigint; title: string; archived: boolean }> {
+): Promise<CommunityCourse> {
   const course = await prisma.course.findUnique({
     where: { id: courseId },
     select: { id: true, title: true, archived: true },
@@ -125,7 +126,7 @@ export async function listCommunityMessages(
   return { messages: hasMore ? messages.slice(0, query.limit) : messages, hasMore };
 }
 
-export async function createCommunityMessage(input: {
+async function createCommunityMessage(input: {
   courseId: bigint;
   senderId: bigint;
   content: string | null;
@@ -173,4 +174,56 @@ export async function createCommunityMessage(input: {
       throw new AppError(400, 'An attachment can only be used once.', 'ATTACHMENT_ALREADY_USED');
     throw error;
   }
+}
+
+export async function sendCommunityMessage(input: {
+  courseId: bigint;
+  identity: CommunityIdentity;
+  content?: string;
+  attachmentIds: bigint[];
+}): Promise<{ course: CommunityCourse; message: CommunityMessageWithDetails }> {
+  const content = input.content?.trim() ?? null;
+  if (!content && input.attachmentIds.length === 0)
+    throw new AppError(400, 'A message needs text or an attachment.', 'VALIDATION_ERROR');
+  if (new Set(input.attachmentIds).size !== input.attachmentIds.length)
+    throw new AppError(400, 'An attachment can only be included once.', 'VALIDATION_ERROR');
+
+  const course = await requireCommunityCourse(input.courseId, input.identity);
+  if (course.archived)
+    throw new AppError(403, 'Archived course communities are read-only.', 'COMMUNITY_READ_ONLY');
+
+  const message = await createCommunityMessage({
+    courseId: course.id,
+    senderId: BigInt(input.identity.sub),
+    content,
+    attachmentIds: input.attachmentIds,
+  });
+  return { course, message };
+}
+
+export async function deleteCommunityMessage(input: {
+  messageId: bigint;
+  identity: CommunityIdentity;
+}): Promise<{ id: bigint; courseId: bigint }> {
+  const message = await prisma.communityMessage.findUnique({
+    where: { id: input.messageId },
+    select: { id: true, courseId: true, senderId: true, deletedAt: true },
+  });
+  if (!message) throw new AppError(404, 'Message was not found.', 'MESSAGE_NOT_FOUND');
+
+  const course = await requireCommunityCourse(message.courseId, input.identity);
+  if (course.archived)
+    throw new AppError(403, 'Archived course communities are read-only.', 'COMMUNITY_READ_ONLY');
+  if (input.identity.role !== 'ADMIN' && message.senderId !== BigInt(input.identity.sub))
+    throw new AppError(403, 'You can only delete your own messages.', 'MESSAGE_DELETE_FORBIDDEN');
+  if (message.deletedAt)
+    throw new AppError(400, 'Message was already deleted.', 'MESSAGE_ALREADY_DELETED');
+
+  const deleted = await prisma.communityMessage.updateMany({
+    where: { id: message.id, deletedAt: null },
+    data: { deletedAt: new Date() },
+  });
+  if (deleted.count === 0)
+    throw new AppError(400, 'Message was already deleted.', 'MESSAGE_ALREADY_DELETED');
+  return { id: message.id, courseId: message.courseId };
 }

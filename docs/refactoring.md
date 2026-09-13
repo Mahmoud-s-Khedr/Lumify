@@ -171,3 +171,30 @@ external integrations; feature services own orchestration and business decisions
 The planned route-heavy module boundary pass is complete. Review cross-feature duplication only
 when a separate, cohesive refactor scope is identified. Continue to run the full quality gate after
 each future behavior-preserving change set.
+
+### 2026-09-13 — Communities Socket.IO boundary completion
+
+- Moved Socket.IO event schemas and inferred event inputs into `schemas.ts`.
+- Moved community message sending, archived-community protection, author/administrator deletion
+  authorization, and soft-deletion persistence into `service.ts`.
+- Reduced `socket.ts` to Socket.IO authentication, event parsing, room membership, acknowledgement,
+  and delivery concerns; it no longer accesses Prisma directly.
+- Kept all socket event names, payloads, acknowledgement/error codes, access rules, and database
+  schema unchanged.
+- Verification: `npm run lint`, `npm run build`, and `npm test` passed (37 tests).
+
+### 2026-09-13 — Repository boundary pass: foundational modules
+
+- Added named persistence repositories for `auth`, `payment-methods`, `users`, `sessions`,
+  `reviews`, and `files`.
+- Moved each module's Prisma reads/writes and reusable include/query shapes into its repository;
+  their services now retain workflows, authorization decisions, passwords, external storage/email
+  orchestration, and HTTP-independent error selection.
+- Kept public routes, payloads, status codes, error codes, and database schema unchanged.
+- Verification: `npm run lint`, `npm run build`, and `npm test` passed (37 tests).
+
+### Next: transaction-heavy repository pass
+
+Extract the remaining repository boundaries one module at a time: `communities`, `courses`,
+`student`, `bookings`, and `rounds`. Preserve the existing transaction and row-lock boundaries in
+the services while moving reusable Prisma queries and include shapes into repositories.
