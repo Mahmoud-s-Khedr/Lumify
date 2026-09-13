@@ -95,6 +95,7 @@ docker compose down --volumes
 | `ACCESS_TOKEN_TTL`             | `15m`                   | Access-token lifetime.                                                |
 | `REFRESH_TOKEN_TTL_DAYS`       | `30`                    | Rotated refresh-session lifetime.                                     |
 | `OTP_TTL_MINUTES`              | `10`                    | Email-verification/reset OTP lifetime.                                |
+| `EXPOSE_OTP_IN_RESPONSE`       | `false`                 | Return OTPs in API responses; use only for non-public staging.        |
 | `RESEND_API_KEY`               | —                       | Resend credential; required in production.                            |
 | `RESEND_FROM_EMAIL`            | —                       | Verified Resend sender; required in production.                       |
 | `R2_ACCOUNT_ID`                | —                       | Cloudflare account ID; required in production.                        |

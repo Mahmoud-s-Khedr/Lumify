@@ -18,6 +18,10 @@ const envSchema = z.object({
   ACCESS_TOKEN_TTL: z.string().default('15m'),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
   OTP_TTL_MINUTES: z.coerce.number().int().min(1).max(60).default(10),
+  EXPOSE_OTP_IN_RESPONSE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   RESEND_API_KEY: z.string().min(1).optional(),
   RESEND_FROM_EMAIL: z.string().email().optional(),
   R2_ACCOUNT_ID: z.string().min(1).optional(),

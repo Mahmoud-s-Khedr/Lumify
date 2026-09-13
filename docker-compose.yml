@@ -5,7 +5,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql://lumify:lumify@db:5432/lumify?schema=public}
     ports:
-      - '${PORT:-3000}:3000'
+      - '${API_BIND_ADDRESS:-0.0.0.0}:${API_HOST_PORT:-3000}:3000'
     depends_on:
       db:
         condition: service_healthy
@@ -14,15 +14,15 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: lumify
-      POSTGRES_USER: lumify
-      POSTGRES_PASSWORD: lumify
+      POSTGRES_DB: ${POSTGRES_DB:-lumify}
+      POSTGRES_USER: ${POSTGRES_USER:-lumify}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lumify}
     ports:
-      - '${POSTGRES_PORT:-5432}:5432'
+      - '${POSTGRES_BIND_ADDRESS:-0.0.0.0}:${POSTGRES_PORT:-5432}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U lumify -d lumify']
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 5s
       timeout: 5s
       retries: 10

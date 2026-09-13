@@ -41,7 +41,7 @@ export function createOtpCode(): string {
 }
 
 export function otpForResponse(code: string): { otp?: string } {
-  return env.NODE_ENV === 'production' ? {} : { otp: code };
+  return env.NODE_ENV === 'production' && !env.EXPOSE_OTP_IN_RESPONSE ? {} : { otp: code };
 }
 
 export async function issueOtp(
