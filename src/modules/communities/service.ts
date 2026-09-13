@@ -2,7 +2,7 @@ import { Prisma, type UserRole } from '@prisma/client';
 
 import { AppError } from '../../common/errors/app-error.js';
 import { prisma } from '../../infrastructure/database/prisma.js';
-import { publicFile } from '../files/routes.js';
+import type { MessageHistoryQuery } from './schemas.js';
 
 export type CommunityIdentity = { sub: string; role: UserRole };
 
@@ -26,23 +26,25 @@ export type CommunityMessageWithDetails = Prisma.CommunityMessageGetPayload<{
   include: typeof communityMessageInclude;
 }>;
 
+const communityWithLatestMessage = {
+  id: true,
+  title: true,
+  description: true,
+  archived: true,
+  communityMessages: {
+    where: { deletedAt: null },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: 1,
+    include: communityMessageInclude,
+  },
+} satisfies Prisma.CourseSelect;
+
+export type CommunityWithLatestMessage = Prisma.CourseGetPayload<{
+  select: typeof communityWithLatestMessage;
+}>;
+
 export function communityRoom(courseId: bigint | string): string {
   return `community:${courseId.toString()}`;
-}
-
-export function publicCommunityMessage(message: CommunityMessageWithDetails) {
-  return {
-    id: message.id.toString(),
-    courseId: message.courseId.toString(),
-    content: message.content,
-    createdAt: message.createdAt.toISOString(),
-    sender: {
-      id: message.sender.id.toString(),
-      name: message.sender.name,
-      avatar: message.sender.avatarFile ? publicFile(message.sender.avatarFile) : null,
-    },
-    attachments: message.attachments.map((attachment) => publicFile(attachment.file)),
-  };
 }
 
 /** Communities intentionally use only currently confirmed bookings. */
@@ -68,6 +70,59 @@ export async function requireCommunityCourse(
       'COMMUNITY_ACCESS_FORBIDDEN',
     );
   return course;
+}
+
+export async function listCommunities(
+  identity: CommunityIdentity,
+): Promise<CommunityWithLatestMessage[]> {
+  return prisma.course.findMany({
+    where:
+      identity.role === 'ADMIN'
+        ? undefined
+        : {
+            rounds: {
+              some: {
+                bookings: { some: { studentId: BigInt(identity.sub), status: 'CONFIRMED' } },
+              },
+            },
+          },
+    select: communityWithLatestMessage,
+    orderBy: { title: 'asc' },
+  });
+}
+
+export async function listCommunityMessages(
+  courseId: bigint,
+  query: MessageHistoryQuery,
+): Promise<{ messages: CommunityMessageWithDetails[]; hasMore: boolean }> {
+  let before: { createdAt: Date; id: bigint } | undefined;
+  if (query.before) {
+    const cursor = await prisma.communityMessage.findFirst({
+      where: { id: BigInt(query.before), courseId },
+      select: { createdAt: true, id: true },
+    });
+    if (!cursor) throw new AppError(400, 'The message cursor is invalid.', 'INVALID_CURSOR');
+    before = cursor;
+  }
+  const messages = await prisma.communityMessage.findMany({
+    where: {
+      courseId,
+      deletedAt: null,
+      ...(before
+        ? {
+            OR: [
+              { createdAt: { lt: before.createdAt } },
+              { createdAt: before.createdAt, id: { lt: before.id } },
+            ],
+          }
+        : {}),
+    },
+    include: communityMessageInclude,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: query.limit + 1,
+  });
+  const hasMore = messages.length > query.limit;
+  return { messages: hasMore ? messages.slice(0, query.limit) : messages, hasMore };
 }
 
 export async function createCommunityMessage(input: {

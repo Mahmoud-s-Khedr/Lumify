@@ -1,44 +1,34 @@
-import { AuthTokenType, type User } from '@prisma/client';
+import type { User } from '@prisma/client';
 import type { FastifyInstance, FastifyReply } from 'fastify';
-import { z } from 'zod';
 
 import { AppError } from '../../common/errors/app-error.js';
-import { verifyPassword, hashPassword } from '../../common/security/passwords.js';
 import { parseRequest } from '../../common/validation/request.js';
 import { env } from '../../config/env.js';
-import { prisma } from '../../infrastructure/database/prisma.js';
+import { publicAuthUser } from './presenter.js';
 import {
-  consumeOtp,
+  changePasswordSchema,
+  credentialsSchema,
+  emailSchema,
+  otpSchema,
+  registrationSchema,
+  resetSchema,
+} from './schemas.js';
+import {
+  authenticate,
+  changePassword,
   createRefreshSession,
-  issueOtp,
-  revokeAllRefreshSessions,
   revokeRefreshSession,
+  registerStudent,
+  requestPasswordReset,
+  resendEmailVerification,
+  resetPassword,
   rotateRefreshSession,
   saveRefreshToken,
-  verifyOtp,
+  verifyEmail,
+  verifyPasswordResetCode,
 } from './service.js';
 
-const credentialsSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8).max(200),
-});
-const otpSchema = z.object({ email: z.string().email(), code: z.string().regex(/^\d{6}$/) });
-const resetSchema = otpSchema.extend({ newPassword: z.string().min(8).max(200) });
 const refreshCookieName = 'lumify_refresh_token';
-
-function publicUser(user: User) {
-  return {
-    id: user.id.toString(),
-    name: user.name,
-    email: user.email,
-    phone: user.phone,
-    contactInfo: user.contactInfo,
-    role: user.role,
-    emailVerified: user.emailVerified,
-    createdAt: user.createdAt.toISOString(),
-    updatedAt: user.updatedAt.toISOString(),
-  };
-}
 
 async function issueSession(
   app: FastifyInstance,
@@ -81,23 +71,9 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     '/auth/register',
     { schema: { tags: ['Authentication'], summary: 'Register a student account' } },
     async (request, reply) => {
-      const body = parseRequest(
-        credentialsSchema.extend({ name: z.string().min(1).max(255) }),
-        request.body,
-      );
-      const email = body.email.toLowerCase();
-      const existing = await prisma.user.findUnique({ where: { email } });
-      if (existing)
-        throw new AppError(
-          409,
-          'An account with this email already exists.',
-          'EMAIL_ALREADY_REGISTERED',
-        );
-      const user = await prisma.user.create({
-        data: { name: body.name, email, passwordHash: await hashPassword(body.password) },
-      });
-      const otp = await issueOtp(user, AuthTokenType.EMAIL_VERIFICATION);
-      return reply.code(201).send({ user: publicUser(user), ...otp });
+      const body = parseRequest(registrationSchema, request.body);
+      const { user, otp } = await registerStudent(body);
+      return reply.code(201).send({ user: publicAuthUser(user), ...otp });
     },
   );
 
@@ -106,22 +82,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     { schema: { tags: ['Authentication'], summary: 'Verify an email OTP' } },
     async (request) => {
       const body = parseRequest(otpSchema, request.body);
-      const user = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
-      if (
-        !user ||
-        !(await consumeOtp({
-          userId: user.id,
-          type: AuthTokenType.EMAIL_VERIFICATION,
-          code: body.code,
-        }))
-      ) {
-        throw new AppError(400, 'The verification code is invalid or expired.', 'INVALID_OTP');
-      }
-      const verified = await prisma.user.update({
-        where: { id: user.id },
-        data: { emailVerified: true },
-      });
-      return { user: publicUser(verified) };
+      return { user: publicAuthUser(await verifyEmail(body)) };
     },
   );
 
@@ -129,10 +90,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     '/auth/resend-verification',
     { schema: { tags: ['Authentication'], summary: 'Resend email verification OTP' } },
     async (request, reply) => {
-      const body = parseRequest(z.object({ email: z.string().email() }), request.body);
-      const user = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
-      const otp =
-        user && !user.emailVerified ? await issueOtp(user, AuthTokenType.EMAIL_VERIFICATION) : {};
+      const body = parseRequest(emailSchema, request.body);
+      const otp = await resendEmailVerification(body);
       return reply.code(202).send(otp);
     },
   );
@@ -142,15 +101,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     { schema: { tags: ['Authentication'], summary: 'Log in and create a session' } },
     async (request, reply) => {
       const body = parseRequest(credentialsSchema, request.body);
-      const user = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
-      if (!user || !(await verifyPassword(body.password, user.passwordHash))) {
-        throw new AppError(401, 'Email or password is incorrect.', 'INVALID_CREDENTIALS');
-      }
-      if (!user.emailVerified)
-        throw new AppError(403, 'Verify your email before logging in.', 'EMAIL_NOT_VERIFIED');
+      const user = await authenticate(body);
       const tokens = await issueSession(app, user);
       setRefreshCookie(reply, tokens.refreshToken);
-      return { accessToken: tokens.accessToken, user: publicUser(user) };
+      return { accessToken: tokens.accessToken, user: publicAuthUser(user) };
     },
   );
 
@@ -203,9 +157,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     '/auth/forgot-password',
     { schema: { tags: ['Authentication'], summary: 'Request a password reset OTP' } },
     async (request, reply) => {
-      const body = parseRequest(z.object({ email: z.string().email() }), request.body);
-      const user = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
-      const otp = user ? await issueOtp(user, AuthTokenType.PASSWORD_RESET) : {};
+      const body = parseRequest(emailSchema, request.body);
+      const otp = await requestPasswordReset(body);
       return reply.code(202).send(otp);
     },
   );
@@ -215,22 +168,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     { schema: { tags: ['Authentication'], summary: 'Reset a password using an OTP' } },
     async (request, reply) => {
       const body = parseRequest(resetSchema, request.body);
-      const user = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
-      if (
-        !user ||
-        !(await consumeOtp({
-          userId: user.id,
-          type: AuthTokenType.PASSWORD_RESET,
-          code: body.code,
-        }))
-      ) {
-        throw new AppError(400, 'The reset code is invalid or expired.', 'INVALID_OTP');
-      }
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { passwordHash: await hashPassword(body.newPassword) },
-      });
-      await revokeAllRefreshSessions(user.id);
+      await resetPassword(body);
       return reply.code(204).send();
     },
   );
@@ -240,17 +178,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     { schema: { tags: ['Authentication'], summary: 'Verify a password reset OTP' } },
     async (request, reply) => {
       const body = parseRequest(otpSchema, request.body);
-      const user = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
-      if (
-        !user ||
-        !(await verifyOtp({
-          userId: user.id,
-          type: AuthTokenType.PASSWORD_RESET,
-          code: body.code,
-        }))
-      ) {
-        throw new AppError(400, 'The reset code is invalid or expired.', 'INVALID_OTP');
-      }
+      await verifyPasswordResetCode(body);
       return reply.code(204).send();
     },
   );
@@ -262,20 +190,9 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       await request.jwtVerify().catch(() => {
         throw new AppError(401, 'Authentication is required.', 'UNAUTHENTICATED');
       });
-      const body = parseRequest(
-        z.object({ currentPassword: z.string(), newPassword: z.string().min(8).max(200) }),
-        request.body,
-      );
+      const body = parseRequest(changePasswordSchema, request.body);
       const userId = BigInt((request.user as { sub: string }).sub);
-      const user = await prisma.user.findUnique({ where: { id: userId } });
-      if (!user || !(await verifyPassword(body.currentPassword, user.passwordHash))) {
-        throw new AppError(400, 'The current password is incorrect.', 'INVALID_CURRENT_PASSWORD');
-      }
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { passwordHash: await hashPassword(body.newPassword) },
-      });
-      await revokeAllRefreshSessions(user.id);
+      await changePassword(userId, body);
       clearRefreshCookie(reply);
       return reply.code(204).send();
     },

@@ -28,7 +28,8 @@ The planned backend workflows are implemented:
 - Runtime OpenAPI/Swagger, PostgreSQL journey tests, Docker, CI, Nginx templates, and backups
 
 See [docs/plan.md](docs/plan.md) for implementation decisions, [docs/schema.md](docs/schema.md)
-for the data model, and [docs/deployment.md](docs/deployment.md) for the production runbook.
+for the data model, [docs/refactoring.md](docs/refactoring.md) for the active structural-change
+record, and [docs/deployment.md](docs/deployment.md) for the production runbook.
 
 ## Prerequisites
 

@@ -7,12 +7,8 @@ import { AppError } from '../../common/errors/app-error.js';
 import { parseRequest } from '../../common/validation/request.js';
 import { corsOrigins } from '../../config/env.js';
 import { prisma } from '../../infrastructure/database/prisma.js';
-import {
-  communityRoom,
-  createCommunityMessage,
-  publicCommunityMessage,
-  requireCommunityCourse,
-} from './service.js';
+import { publicCommunityMessage } from './presenter.js';
+import { communityRoom, createCommunityMessage, requireCommunityCourse } from './service.js';
 
 type Acknowledgement = (result: Record<string, unknown>) => unknown;
 
