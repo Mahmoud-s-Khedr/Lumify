@@ -2,6 +2,7 @@ import type { User } from '@prisma/client';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 
 import { AppError } from '../../common/errors/app-error.js';
+import { zodSchema } from '../../common/documentation/zod-schema.js';
 import { parseRequest } from '../../common/validation/request.js';
 import { env } from '../../config/env.js';
 import { publicAuthUser } from './presenter.js';
@@ -69,7 +70,13 @@ function clearRefreshCookie(reply: FastifyReply): void {
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     '/auth/register',
-    { schema: { tags: ['Authentication'], summary: 'Register a student account' } },
+    {
+      schema: {
+        tags: ['Authentication'],
+        summary: 'Register a student account',
+        body: zodSchema(registrationSchema),
+      },
+    },
     async (request, reply) => {
       const body = parseRequest(registrationSchema, request.body);
       const { user, otp } = await registerStudent(body);
@@ -79,7 +86,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/auth/verify-email',
-    { schema: { tags: ['Authentication'], summary: 'Verify an email OTP' } },
+    {
+      schema: {
+        tags: ['Authentication'],
+        summary: 'Verify an email OTP',
+        body: zodSchema(otpSchema),
+      },
+    },
     async (request) => {
       const body = parseRequest(otpSchema, request.body);
       return { user: publicAuthUser(await verifyEmail(body)) };
@@ -88,7 +101,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/auth/resend-verification',
-    { schema: { tags: ['Authentication'], summary: 'Resend email verification OTP' } },
+    {
+      schema: {
+        tags: ['Authentication'],
+        summary: 'Resend email verification OTP',
+        body: zodSchema(emailSchema),
+      },
+    },
     async (request, reply) => {
       const body = parseRequest(emailSchema, request.body);
       const otp = await resendEmailVerification(body);
@@ -98,7 +117,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/auth/login',
-    { schema: { tags: ['Authentication'], summary: 'Log in and create a session' } },
+    {
+      schema: {
+        tags: ['Authentication'],
+        summary: 'Log in and create a session',
+        body: zodSchema(credentialsSchema),
+      },
+    },
     async (request, reply) => {
       const body = parseRequest(credentialsSchema, request.body);
       const user = await authenticate(body);
@@ -155,7 +180,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/auth/forgot-password',
-    { schema: { tags: ['Authentication'], summary: 'Request a password reset OTP' } },
+    {
+      schema: {
+        tags: ['Authentication'],
+        summary: 'Request a password reset OTP',
+        body: zodSchema(emailSchema),
+      },
+    },
     async (request, reply) => {
       const body = parseRequest(emailSchema, request.body);
       const otp = await requestPasswordReset(body);
@@ -165,7 +196,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/auth/reset-password',
-    { schema: { tags: ['Authentication'], summary: 'Reset a password using an OTP' } },
+    {
+      schema: {
+        tags: ['Authentication'],
+        summary: 'Reset a password using an OTP',
+        body: zodSchema(resetSchema),
+      },
+    },
     async (request, reply) => {
       const body = parseRequest(resetSchema, request.body);
       await resetPassword(body);
@@ -175,7 +212,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/auth/verify-reset-code',
-    { schema: { tags: ['Authentication'], summary: 'Verify a password reset OTP' } },
+    {
+      schema: {
+        tags: ['Authentication'],
+        summary: 'Verify a password reset OTP',
+        body: zodSchema(otpSchema),
+      },
+    },
     async (request, reply) => {
       const body = parseRequest(otpSchema, request.body);
       await verifyPasswordResetCode(body);
@@ -185,7 +228,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/auth/change-password',
-    { schema: { tags: ['Authentication'], summary: 'Change the current password' } },
+    {
+      schema: {
+        tags: ['Authentication'],
+        summary: 'Change the current password',
+        body: zodSchema(changePasswordSchema),
+      },
+    },
     async (request, reply) => {
       await request.jwtVerify().catch(() => {
         throw new AppError(401, 'Authentication is required.', 'UNAUTHENTICATED');

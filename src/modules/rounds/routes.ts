@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import { requireAdmin, requireUser } from '../../common/authorization/auth.js';
+import { zodSchema } from '../../common/documentation/zod-schema.js';
 import { AppError } from '../../common/errors/app-error.js';
 import { parseRequest } from '../../common/validation/request.js';
 import { objectStorage } from '../../infrastructure/r2/storage.js';
@@ -63,11 +64,8 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Rounds'],
         summary: 'List bookable rounds for a course',
-        querystring: {
-          type: 'object',
-          additionalProperties: false,
-          properties: { includeUnavailable: { type: 'string', enum: ['true'] } },
-        },
+        params: zodSchema(courseParamsSchema),
+        querystring: zodSchema(listRoundsQuerySchema),
       },
     },
     async (request) => {
@@ -87,7 +85,13 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/rounds/:id',
-    { schema: { tags: ['Rounds'], summary: 'Get round details and its weekly schedule' } },
+    {
+      schema: {
+        tags: ['Rounds'],
+        summary: 'Get round details and its weekly schedule',
+        params: zodSchema(roundParamsSchema),
+      },
+    },
     async (request) => {
       const params = parseRequest(roundParamsSchema, request.params);
       return { round: publicRound(await requireVisibleRound(request, BigInt(params.id))) };
@@ -96,7 +100,14 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/courses/:courseId/rounds',
-    { schema: { tags: ['Rounds'], summary: 'Create a course round with a weekly schedule' } },
+    {
+      schema: {
+        tags: ['Rounds'],
+        summary: 'Create a course round with a weekly schedule',
+        params: zodSchema(courseParamsSchema),
+        body: zodSchema(createRoundSchema),
+      },
+    },
     async (request, reply) => {
       await requireAdmin(request);
       const params = parseRequest(courseParamsSchema, request.params);
@@ -112,6 +123,8 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Rounds'],
         summary: 'Update round dates before enrollment or capacity at any time',
+        params: zodSchema(roundParamsSchema),
+        body: zodSchema(updateRoundSchema),
       },
     },
     async (request) => {
@@ -124,7 +137,13 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete(
     '/rounds/:id',
-    { schema: { tags: ['Rounds'], summary: 'Delete a round that has no bookings' } },
+    {
+      schema: {
+        tags: ['Rounds'],
+        summary: 'Delete a round that has no bookings',
+        params: zodSchema(roundParamsSchema),
+      },
+    },
     async (request, reply) => {
       await requireAdmin(request);
       const params = parseRequest(roundParamsSchema, request.params);
@@ -141,7 +160,14 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/rounds/:id/schedules',
-    { schema: { tags: ['Rounds'], summary: 'Add a weekly schedule entry' } },
+    {
+      schema: {
+        tags: ['Rounds'],
+        summary: 'Add a weekly schedule entry',
+        params: zodSchema(roundParamsSchema),
+        body: zodSchema(scheduleValuesSchema),
+      },
+    },
     async (request, reply) => {
       await requireAdmin(request);
       const params = parseRequest(roundParamsSchema, request.params);
@@ -163,7 +189,14 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch(
     '/rounds/:id/schedules/:scheduleId',
-    { schema: { tags: ['Rounds'], summary: 'Update a weekly schedule entry' } },
+    {
+      schema: {
+        tags: ['Rounds'],
+        summary: 'Update a weekly schedule entry',
+        params: zodSchema(scheduleParamsSchema),
+        body: zodSchema(updateScheduleSchema),
+      },
+    },
     async (request) => {
       await requireAdmin(request);
       const params = parseRequest(scheduleParamsSchema, request.params);
@@ -185,7 +218,13 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete(
     '/rounds/:id/schedules/:scheduleId',
-    { schema: { tags: ['Rounds'], summary: 'Delete a weekly schedule entry' } },
+    {
+      schema: {
+        tags: ['Rounds'],
+        summary: 'Delete a weekly schedule entry',
+        params: zodSchema(scheduleParamsSchema),
+      },
+    },
     async (request, reply) => {
       await requireAdmin(request);
       const params = parseRequest(scheduleParamsSchema, request.params);
@@ -196,7 +235,13 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/rounds/:id/materials',
-    { schema: { tags: ['Round materials'], summary: 'List protected round materials' } },
+    {
+      schema: {
+        tags: ['Round materials'],
+        summary: 'List protected round materials',
+        params: zodSchema(roundParamsSchema),
+      },
+    },
     async (request) => {
       const params = parseRequest(roundParamsSchema, request.params);
       const roundId = BigInt(params.id);
@@ -210,7 +255,14 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/rounds/:id/materials',
-    { schema: { tags: ['Round materials'], summary: 'Add a file or link material' } },
+    {
+      schema: {
+        tags: ['Round materials'],
+        summary: 'Add a file or link material',
+        params: zodSchema(roundParamsSchema),
+        body: zodSchema(createMaterialSchema),
+      },
+    },
     async (request, reply) => {
       const identity = await requireAdmin(request);
       const params = parseRequest(roundParamsSchema, request.params);
@@ -222,7 +274,14 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch(
     '/rounds/:id/materials/:materialId',
-    { schema: { tags: ['Round materials'], summary: 'Update a round material' } },
+    {
+      schema: {
+        tags: ['Round materials'],
+        summary: 'Update a round material',
+        params: zodSchema(materialParamsSchema),
+        body: zodSchema(updateMaterialSchema),
+      },
+    },
     async (request) => {
       const identity = await requireAdmin(request);
       const params = parseRequest(materialParamsSchema, request.params);
@@ -241,7 +300,13 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete(
     '/rounds/:id/materials/:materialId',
-    { schema: { tags: ['Round materials'], summary: 'Delete a round material' } },
+    {
+      schema: {
+        tags: ['Round materials'],
+        summary: 'Delete a round material',
+        params: zodSchema(materialParamsSchema),
+      },
+    },
     async (request, reply) => {
       await requireAdmin(request);
       const params = parseRequest(materialParamsSchema, request.params);

@@ -9,6 +9,8 @@ import type { FastifyInstance } from 'fastify';
 import Fastify from 'fastify';
 
 import { AppError } from '../common/errors/app-error.js';
+import { documentRoute, openapiComponents } from '../common/documentation/openapi.js';
+import { closeZodObjectsForDocumentation } from '../common/documentation/zod-schema.js';
 import { corsOrigin, env } from '../config/env.js';
 import { prisma } from '../infrastructure/database/prisma.js';
 import { authRoutes } from '../modules/auth/routes.js';
@@ -67,7 +69,12 @@ export async function buildApp(): Promise<FastifyInstance> {
         version: '0.1.0',
       },
       servers: [{ url: '/' }],
+      components: openapiComponents as never,
     },
+    transform: ({ schema, url, route }) => ({
+      schema: documentRoute(closeZodObjectsForDocumentation(schema), url, route),
+      url,
+    }),
   });
   await app.register(swaggerUi, {
     routePrefix: '/docs',

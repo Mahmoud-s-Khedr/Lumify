@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import { requireUser } from '../../common/authorization/auth.js';
+import { zodSchema } from '../../common/documentation/zod-schema.js';
 import { AppError } from '../../common/errors/app-error.js';
 import { parseRequest } from '../../common/validation/request.js';
 import { publicStudentCourse, publicStudentDashboard, publicStudentRound } from './presenter.js';
@@ -14,8 +15,8 @@ const fileSchema = {
   properties: {
     id: { type: 'string' },
     originalName: { type: 'string' },
-    mimeType: { type: ['string', 'null'] },
-    sizeBytes: { type: ['string', 'null'] },
+    mimeType: { type: 'string', nullable: true },
+    sizeBytes: { type: 'string', nullable: true },
     downloadUrl: { type: 'string' },
   },
 } as const;
@@ -53,8 +54,8 @@ const materialSchema = {
     id: { type: 'string' },
     title: { type: 'string' },
     kind: { type: 'string', enum: ['FILE', 'LINK'] },
-    file: { anyOf: [{ type: 'null' }, fileSchema] },
-    externalUrl: { type: ['string', 'null'] },
+    file: { allOf: [fileSchema], nullable: true },
+    externalUrl: { type: 'string', nullable: true },
     createdAt: { type: 'string', format: 'date-time' },
   },
 } as const;
@@ -83,12 +84,12 @@ const studentCoursesResponseSchema = {
         properties: {
           courseId: { type: 'string' },
           title: { type: 'string' },
-          image: { anyOf: [{ type: 'null' }, fileSchema] },
+          image: { allOf: [fileSchema], nullable: true },
           roundId: { type: 'string' },
           startDate: { type: 'string', format: 'date' },
           endDate: { type: 'string', format: 'date' },
           state: { type: 'string', enum: ['UPCOMING', 'IN_PROGRESS', 'FINISHED'] },
-          nextSession: { anyOf: [{ type: 'null' }, nextSessionSchema] },
+          nextSession: { allOf: [nextSessionSchema], nullable: true },
           recordingCount: { type: 'integer', minimum: 0 },
         },
       },
@@ -118,7 +119,7 @@ const studentRoundResponseSchema = {
       properties: {
         id: { type: 'string' },
         title: { type: 'string' },
-        description: { type: ['string', 'null'] },
+        description: { type: 'string', nullable: true },
       },
     },
     round: {
@@ -143,7 +144,7 @@ const studentRoundResponseSchema = {
           id: { type: 'string' },
           title: { type: 'string' },
           sessionDate: { type: 'string', format: 'date-time' },
-          recordingUrl: { type: ['string', 'null'] },
+          recordingUrl: { type: 'string', nullable: true },
         },
       },
     },
@@ -183,7 +184,7 @@ const dashboardResponseSchema = {
           startDate: { type: 'string', format: 'date' },
           endDate: { type: 'string', format: 'date' },
           state: { type: 'string', enum: ['UPCOMING', 'IN_PROGRESS', 'FINISHED'] },
-          nextSession: { anyOf: [{ type: 'null' }, nextSessionSchema] },
+          nextSession: { allOf: [nextSessionSchema], nullable: true },
         },
       },
     },
@@ -241,17 +242,7 @@ export async function studentRoutes(app: FastifyInstance): Promise<void> {
         summary: "List the authenticated student's accessible course rounds",
         description:
           'Returns confirmed and cancellation-requested enrollments only. AVAILABLE recordings means at least one session has a recording URL, including future sessions.',
-        querystring: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            q: { type: 'string' },
-            roundState: { type: 'string', enum: ['UPCOMING', 'IN_PROGRESS', 'FINISHED'] },
-            recordings: { type: 'string', enum: ['AVAILABLE', 'NONE'] },
-            page: { type: 'integer', minimum: 1 },
-            pageSize: { type: 'integer', minimum: 1, maximum: 100 },
-          },
-        },
+        querystring: zodSchema(studentCoursesQuerySchema),
         response: { 200: studentCoursesResponseSchema },
       },
     },
@@ -280,12 +271,7 @@ export async function studentRoutes(app: FastifyInstance): Promise<void> {
         summary: 'Get an accessible round for the student course pages',
         description:
           'Returns course, round, session, and material data for confirmed and cancellation-requested enrollments. Join and WhatsApp URLs are intentionally excluded.',
-        params: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['id'],
-          properties: { id: { type: 'string', pattern: '^\\d+$' } },
-        },
+        params: zodSchema(studentRoundParamsSchema),
         response: { 200: studentRoundResponseSchema },
       },
     },

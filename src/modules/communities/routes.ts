@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import { requireUser } from '../../common/authorization/auth.js';
+import { zodSchema } from '../../common/documentation/zod-schema.js';
 import { parseRequest } from '../../common/validation/request.js';
 import { publicCommunity, publicCommunityMessage } from './presenter.js';
 import { courseParamsSchema, messageQuerySchema } from './schemas.js';
@@ -21,7 +22,12 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     '/communities/:courseId/messages',
     {
-      schema: { tags: ['Communities'], summary: 'Get cursor-paginated community message history' },
+      schema: {
+        tags: ['Communities'],
+        summary: 'Get cursor-paginated community message history',
+        params: zodSchema(courseParamsSchema),
+        querystring: zodSchema(messageQuerySchema),
+      },
     },
     async (request) => {
       const identity = await requireUser(request);

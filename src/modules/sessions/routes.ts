@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import { requireAdmin, requireUser } from '../../common/authorization/auth.js';
+import { zodSchema } from '../../common/documentation/zod-schema.js';
 import { parseRequest } from '../../common/validation/request.js';
 import { publicJoinDetails, publicSession } from './presenter.js';
 import {
@@ -31,6 +32,8 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
         summary: 'Set protected live and WhatsApp join details',
         description:
           'Live and WhatsApp URLs can be added only on or after the round start date. Public round responses never expose these values.',
+        params: zodSchema(roundParamsSchema),
+        body: zodSchema(updateJoinSchema),
       },
     },
     async (request) => {
@@ -48,6 +51,7 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Course delivery'],
         summary: 'Get the protected join-screen payload',
+        params: zodSchema(roundParamsSchema),
       },
     },
     async (request) => {
@@ -60,7 +64,13 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/rounds/:id/sessions',
-    { schema: { tags: ['Sessions'], summary: 'List protected recorded sessions for a round' } },
+    {
+      schema: {
+        tags: ['Sessions'],
+        summary: 'List protected recorded sessions for a round',
+        params: zodSchema(roundParamsSchema),
+      },
+    },
     async (request) => {
       const params = parseRequest(roundParamsSchema, request.params);
       const roundId = BigInt(params.id);
@@ -73,7 +83,13 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/admin/sessions',
-    { schema: { tags: ['Sessions'], summary: 'List sessions across all rounds' } },
+    {
+      schema: {
+        tags: ['Sessions'],
+        summary: 'List sessions across all rounds',
+        querystring: zodSchema(adminSessionQuerySchema),
+      },
+    },
     async (request) => {
       await requireAdmin(request);
       const query = parseRequest(adminSessionQuerySchema, request.query);
@@ -84,7 +100,14 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/rounds/:id/sessions',
-    { schema: { tags: ['Sessions'], summary: 'Create a recorded session' } },
+    {
+      schema: {
+        tags: ['Sessions'],
+        summary: 'Create a recorded session',
+        params: zodSchema(roundParamsSchema),
+        body: zodSchema(createSessionSchema),
+      },
+    },
     async (request, reply) => {
       await requireAdmin(request);
       const params = parseRequest(roundParamsSchema, request.params);
@@ -96,7 +119,14 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch(
     '/sessions/:id',
-    { schema: { tags: ['Sessions'], summary: 'Update a recorded session' } },
+    {
+      schema: {
+        tags: ['Sessions'],
+        summary: 'Update a recorded session',
+        params: zodSchema(sessionParamsSchema),
+        body: zodSchema(updateSessionSchema),
+      },
+    },
     async (request) => {
       await requireAdmin(request);
       const params = parseRequest(sessionParamsSchema, request.params);
@@ -108,7 +138,13 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete(
     '/sessions/:id',
-    { schema: { tags: ['Sessions'], summary: 'Delete a recorded session' } },
+    {
+      schema: {
+        tags: ['Sessions'],
+        summary: 'Delete a recorded session',
+        params: zodSchema(sessionParamsSchema),
+      },
+    },
     async (request, reply) => {
       await requireAdmin(request);
       const params = parseRequest(sessionParamsSchema, request.params);

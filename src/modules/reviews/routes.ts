@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import { requireAdmin, requireUser } from '../../common/authorization/auth.js';
+import { zodSchema } from '../../common/documentation/zod-schema.js';
 import { AppError } from '../../common/errors/app-error.js';
 import { parseRequest } from '../../common/validation/request.js';
 import { adminReview, ownerReview, publicReview } from './presenter.js';
@@ -29,14 +30,8 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Course reviews'],
         summary: 'List approved course reviews',
-        querystring: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            page: { type: 'integer', minimum: 1 },
-            pageSize: { type: 'integer', minimum: 1, maximum: 100 },
-          },
-        },
+        params: zodSchema(courseParamsSchema),
+        querystring: zodSchema(paginationSchema),
       },
     },
     async (request) => {
@@ -57,7 +52,13 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/courses/:courseId/reviews/me',
-    { schema: { tags: ['Course reviews'], summary: "Get the current student's course review" } },
+    {
+      schema: {
+        tags: ['Course reviews'],
+        summary: "Get the current student's course review",
+        params: zodSchema(courseParamsSchema),
+      },
+    },
     async (request) => {
       const identity = await requireUser(request);
       if (identity.role !== 'STUDENT')
@@ -70,7 +71,14 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/courses/:courseId/reviews',
-    { schema: { tags: ['Course reviews'], summary: 'Submit a course review for moderation' } },
+    {
+      schema: {
+        tags: ['Course reviews'],
+        summary: 'Submit a course review for moderation',
+        params: zodSchema(courseParamsSchema),
+        body: zodSchema(reviewValuesSchema),
+      },
+    },
     async (request, reply) => {
       const identity = await requireUser(request);
       if (identity.role !== 'STUDENT')
@@ -84,7 +92,14 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch(
     '/courses/:courseId/reviews/me',
-    { schema: { tags: ['Course reviews'], summary: 'Revise and resubmit the current review' } },
+    {
+      schema: {
+        tags: ['Course reviews'],
+        summary: 'Revise and resubmit the current review',
+        params: zodSchema(courseParamsSchema),
+        body: zodSchema(reviewValuesSchema),
+      },
+    },
     async (request) => {
       const identity = await requireUser(request);
       if (identity.role !== 'STUDENT')
@@ -98,7 +113,13 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/admin/reviews',
-    { schema: { tags: ['Course reviews'], summary: 'List reviews for moderation' } },
+    {
+      schema: {
+        tags: ['Course reviews'],
+        summary: 'List reviews for moderation',
+        querystring: zodSchema(adminListSchema),
+      },
+    },
     async (request) => {
       await requireAdmin(request);
       const query = parseRequest(adminListSchema, request.query);
@@ -122,6 +143,8 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
         schema: {
           tags: ['Course reviews'],
           summary: `${decision === 'approve' ? 'Approve' : 'Reject'} a pending course review`,
+          params: zodSchema(reviewParamsSchema),
+          body: zodSchema(moderationSchema),
         },
       },
       async (request) => {

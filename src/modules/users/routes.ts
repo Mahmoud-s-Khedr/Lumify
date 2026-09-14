@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import { requireUser } from '../../common/authorization/auth.js';
+import { zodSchema } from '../../common/documentation/zod-schema.js';
 import { parseRequest } from '../../common/validation/request.js';
 import { publicUser } from './presenter.js';
 import { profileSchema } from './schemas.js';
@@ -18,7 +19,13 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch(
     '/users/me',
-    { schema: { tags: ['Users'], summary: 'Update the current profile' } },
+    {
+      schema: {
+        tags: ['Users'],
+        summary: 'Update the current profile',
+        body: zodSchema(profileSchema),
+      },
+    },
     async (request) => {
       const identity = await requireUser(request);
       const body = parseRequest(profileSchema, request.body);

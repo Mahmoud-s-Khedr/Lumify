@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import { requireAdmin } from '../../common/authorization/auth.js';
+import { zodSchema } from '../../common/documentation/zod-schema.js';
 import { parseRequest } from '../../common/validation/request.js';
 import {
   paymentMethodParamsSchema,
@@ -23,7 +24,13 @@ export async function paymentMethodRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/payment-methods',
-    { schema: { tags: ['Payment methods'], summary: 'Create a payment method' } },
+    {
+      schema: {
+        tags: ['Payment methods'],
+        summary: 'Create a payment method',
+        body: zodSchema(paymentMethodSchema),
+      },
+    },
     async (request, reply) => {
       await requireAdmin(request);
       const body = parseRequest(paymentMethodSchema, request.body);
@@ -33,7 +40,14 @@ export async function paymentMethodRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch(
     '/payment-methods/:key',
-    { schema: { tags: ['Payment methods'], summary: 'Update a payment method' } },
+    {
+      schema: {
+        tags: ['Payment methods'],
+        summary: 'Update a payment method',
+        params: zodSchema(paymentMethodParamsSchema),
+        body: zodSchema(updatePaymentMethodSchema),
+      },
+    },
     async (request) => {
       await requireAdmin(request);
       const params = parseRequest(paymentMethodParamsSchema, request.params);
@@ -44,7 +58,13 @@ export async function paymentMethodRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete(
     '/payment-methods/:key',
-    { schema: { tags: ['Payment methods'], summary: 'Delete a payment method' } },
+    {
+      schema: {
+        tags: ['Payment methods'],
+        summary: 'Delete a payment method',
+        params: zodSchema(paymentMethodParamsSchema),
+      },
+    },
     async (request, reply) => {
       await requireAdmin(request);
       const params = parseRequest(paymentMethodParamsSchema, request.params);

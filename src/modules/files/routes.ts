@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import { requireUser } from '../../common/authorization/auth.js';
+import { zodSchema } from '../../common/documentation/zod-schema.js';
 import { AppError } from '../../common/errors/app-error.js';
 import { parseRequest } from '../../common/validation/request.js';
 import { publicFile } from './presenter.js';
@@ -18,7 +19,13 @@ import {
 export async function fileRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     '/files/uploads',
-    { schema: { tags: ['Files'], summary: 'Create a signed file upload URL' } },
+    {
+      schema: {
+        tags: ['Files'],
+        summary: 'Create a signed file upload URL',
+        body: zodSchema(uploadSchema),
+      },
+    },
     async (request, reply) => {
       const identity = await requireUser(request);
       const body = parseRequest(uploadSchema, request.body);
@@ -30,7 +37,13 @@ export async function fileRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/files/uploads/complete',
-    { schema: { tags: ['Files'], summary: 'Persist a completed file upload' } },
+    {
+      schema: {
+        tags: ['Files'],
+        summary: 'Persist a completed file upload',
+        body: zodSchema(completeSchema),
+      },
+    },
     async (request, reply) => {
       const identity = await requireUser(request);
       const body = parseRequest(completeSchema, request.body);
@@ -44,7 +57,13 @@ export async function fileRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/files/:id/download',
-    { schema: { tags: ['Files'], summary: 'Redirect to an authorized private file download' } },
+    {
+      schema: {
+        tags: ['Files'],
+        summary: 'Redirect to an authorized private file download',
+        params: zodSchema(fileIdSchema),
+      },
+    },
     async (request, reply) => {
       const params = parseRequest(fileIdSchema, request.params);
       const file = await findFileForDownload(BigInt(params.id));

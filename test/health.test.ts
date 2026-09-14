@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { api } from './http.js';
 
+type OpenApiOperation = { requestBody?: unknown };
+type OpenApiPath = { get?: OpenApiOperation; post?: OpenApiOperation; patch?: OpenApiOperation };
+
 describe('running backend health and docs', () => {
   it('returns service health', async () => {
     const [health, readiness] = await Promise.all([
@@ -18,7 +21,7 @@ describe('running backend health and docs', () => {
   it('serves Swagger UI and generated OpenAPI documentation', async () => {
     const [docs, openapi] = await Promise.all([
       api('/docs/'),
-      api<{ openapi: string; paths: Record<string, unknown> }>('/docs/json'),
+      api<{ openapi: string; paths: Record<string, OpenApiPath> }>('/docs/json'),
     ]);
 
     expect(docs.status).toBe(200);
@@ -33,5 +36,30 @@ describe('running backend health and docs', () => {
         '/admin/cancellations',
       ]),
     );
+    expect(openapi.body.paths['/auth/login']?.post?.requestBody).toMatchObject({
+      required: true,
+      content: {
+        'application/json': {
+          schema: {
+            required: ['email', 'password'],
+            properties: {
+              email: { type: 'string', format: 'email' },
+              password: { type: 'string', minLength: 8, maxLength: 200 },
+            },
+            additionalProperties: false,
+          },
+        },
+      },
+    });
+    expect(openapi.body.paths['/courses/{courseId}/rounds']?.post?.requestBody).toMatchObject({
+      content: {
+        'application/json': {
+          schema: {
+            required: ['startDate', 'endDate', 'capacity'],
+            properties: { schedules: { type: 'array' } },
+          },
+        },
+      },
+    });
   });
 });
