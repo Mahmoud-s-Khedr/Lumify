@@ -4,6 +4,29 @@ Backend for Lumify, a single-instructor course platform. It supports student aut
 profiles, course rounds, manual payment review, protected course delivery, recorded sessions, and
 cancellation processing.
 
+The implementation is designed for one API instance. In particular, course-community Socket.IO
+rooms are local to the process; a shared adapter such as Redis is required before running multiple
+instances. The production assets are deployment configuration and a runbook, not evidence of a
+live deployment or production traffic.
+
+## Architecture and core workflow
+
+```mermaid
+flowchart LR
+  Client[Student or admin client] -->|HTTP / Socket.IO| API[Fastify API]
+  API --> Auth[Authentication and role checks]
+  API --> Domain[Courses, rounds, bookings, sessions and communities]
+  Domain --> DB[(PostgreSQL via Prisma)]
+  API --> Storage[Private Cloudflare R2]
+  API --> Mail[Resend]
+  API --> Docs[OpenAPI / Swagger]
+```
+
+Bookings preserve the price and payment-method details at the time of submission. An administrator
+reviews payment evidence, and confirmation is serialized with a database transaction and row lock
+so concurrent approvals cannot exceed a round's capacity. Confirmed enrolment then gates access to
+round materials, join details, recordings, and course-community events.
+
 ## Stack
 
 - Node.js 20.18+ (Node.js 22 is used by Docker and CI)
