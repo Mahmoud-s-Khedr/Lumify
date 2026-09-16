@@ -1,0 +1,187 @@
+
+• The current chat interface is B2B company chat only. All REST endpoints require Authorization: Bearer <JWT>
+  and a user with company context.
+
+  Base REST URL: /api/v1
+
+  type ApiResponse<T> = {
+    status: "success";
+    message: string;
+    data: T;
+    token?: string; // current or rotated JWT on protected responses
+  };
+
+  type ChatRoom = {
+    id: number;
+    companyAId: number;
+    companyBId: number;
+    otherCompany: {
+      id: number;
+      name: string;
+      logoFileId: number | null;
+      logoUrl: string | null;
+    };
+    status: "active" | "archived";
+    createdAt: string;
+    lastMessage: string | null;
+    lastMessageAt: string | null;
+    lastMessageObject: {
+      id: number;
+      senderId: number | null;
+      sentAt: string;
+      messageText: string | null;
+      attachment: ChatAttachment | null;
+    } | null;
+    unreadCount: number;
+  };
+
+  type ChatAttachment = {
+    id: number;
+    fileName: string;
+    publicUrl: string | null;
+    mimeType: string | null;
+    size: number | null;
+  };
+
+  type ChatMessage = {
+    id: number;
+    roomId: number;
+    messageText: string | null;
+    sentAt: string;
+    readAt: string | null;
+    isRead: boolean;
+    attachment: ChatAttachment | null;
+    agent: {
+      id: number;
+      firstName: string | null;
+      lastName: string | null;
+      profileImageFileId: number | null;
+      profileImageUrl: string | null;
+    };
+    company: {
+      id: number;
+      name: string;
+      logoFileId: number | null;
+      logoUrl: string | null;
+    };
+  };
+
+   Method    Endpoint                   Request                             Successful response
+  ━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   GET       /chats                     Query: keyword?, status=active|     ApiResponse<ChatRoom[]>
+                                        archived?, limit=1..100 (default
+                                        50), offset>=0
+  ────────  ─────────────────────────  ──────────────────────────────────  ──────────────────────────────────
+   POST      /chats                     { "targetCompanyId": 45 }           201 if created or 200 if it
+                                                                            already exists;
+                                                                            ApiResponse<ChatRoom>
+  ────────  ─────────────────────────  ──────────────────────────────────  ──────────────────────────────────
+   GET       /chats/:roomId             —                                   ApiResponse<ChatRoom>
+  ────────  ─────────────────────────  ──────────────────────────────────  ──────────────────────────────────
+   PATCH     /chats/:roomId/archive     No body                             ApiResponse<ChatRoom>
+  ────────  ─────────────────────────  ──────────────────────────────────  ──────────────────────────────────
+   GET       /chats/:roomId/messages    Query: limit, offset, or cursor     ApiResponse<{ messages:
+                                        before / after. before and after    ChatMessage[]; pagination:
+                                        are mutually exclusive; cursor      { mode: "offset" | "cursor";
+                                        mode requires offset=0.             total: number; limit: number;
+                                                                            offset: number; hasMore:
+                                                                            boolean; nextCursor: number |
+                                                                            null } }>
+  ────────  ─────────────────────────  ──────────────────────────────────  ──────────────────────────────────
+   POST      /chats/:roomId/messages    { "messageText": "Hello",           201, ApiResponse<ChatMessage>
+                                        "attachmentFileId": 123 } — at
+                                        least one field is required;
+                                        text max 5,000 chars
+  ────────  ─────────────────────────  ──────────────────────────────────  ──────────────────────────────────
+   POST      /chats/:roomId/read        { "messageId": 999 } (messageId     ApiResponse<{ roomId: number;
+                                        optional; omit to mark all          messageId: number | null;
+                                        received messages in the room as    readCount: number; unreadCount:
+                                        read)                               number }>
+
+  attachmentFileId must reference an existing, non-deleted file uploaded by the current user. Common failures
+  are 400 (invalid/inactive room or validation), 401 (invalid JWT), 403 (not a participant/company context),
+  and 404 (room/file/company missing).
+
+  ## Socket.IO
+
+  Connect to the API origin; Socket.IO uses /socket.io/ by default. Realtime is available only when
+  ENABLE_SOCKETIO=true.
+
+  import { io } from "socket.io-client";
+
+  const socket = io(API_ORIGIN, {
+    auth: { token: jwt },
+    // Socket.IO’s default transports work; WebSocket can be forced if desired.
+  });
+
+  The token may alternatively be sent as Authorization: Bearer <JWT> during the handshake. Do not emit a
+  chat:join event: active rooms are automatically joined after connection.
+
+  ### Client → server
+
+  socket.emit("chat:message", {
+    roomId: 10,
+    messageText: "Hello",      // `text` is also accepted as a legacy alias
+    attachmentFileId: 123,     // optional
+  });
+
+  socket.emit("chat:read", {
+    roomId: 10,
+    messageId: 999,            // optional
+  });
+
+  socket.emit("chat:typing", {
+    roomId: 10,
+    isTyping: true,
+  });
+
+  chat:message must contain text and/or an attachment. Socket events do not use acknowledgement callbacks;
+  listen for the events below.
+
+  ### Server → client
+
+  socket.on("chat:ready", (payload: {
+    b2bRoomIds: number[];
+    error: string | null;
+  }) => {});
+
+  Emitted after authentication and automatic subscription to every active room. Wait for this before treating
+  the chat connection as ready.
+
+  socket.on("chat:message", (message: ChatMessage) => {});
+
+  Emitted to both participating companies after a socket-sent message is persisted.
+
+  socket.on("chat:read", (payload: {
+    roomId: number;
+    companyId: number;
+    messageId: number | null;
+    unreadCount: number;
+    company?: { id: number; name: string; logo: number | null };
+  }) => {});
+
+  socket.on("chat:typing", (payload: {
+    roomId: number;
+    userId: number;
+    companyId: number | null;
+    isTyping: boolean;
+    company?: { id: number; name: string; logo: number | null };
+  }) => {});
+
+  socket.on("chat:room:new", (room: ChatRoom) => {});
+
+  This arrives when either company creates a new room; connected sockets are automatically subscribed to it.
+
+  socket.on("chat:error", (payload: {
+    message: string;
+    code: number;
+  }) => {});
+
+  One implementation detail worth accounting for: POST /chats/:roomId/messages saves the fallback message,
+  but does not itself emit a realtime chat:message event. Use it when Socket.IO is unavailable and refresh/
+  poll message history accordingly.
+
+  The project also exposes generated Socket.IO AsyncAPI JSON at /api/v1/socket-docs.json when Swagger is
+  enabled. The source contracts are in chat routes (src/modules/chat/routes/chat.routes.js), socket handler
+  (src/infrastructure/sockets/chat.handler.js), and socket event schemas (src/core/contracts/socket/
+  events.js).

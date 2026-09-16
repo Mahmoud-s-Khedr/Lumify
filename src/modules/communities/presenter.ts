@@ -1,4 +1,4 @@
-import type { CommunityMessageWithDetails, CommunityWithLatestMessage } from './service.js';
+import type { CommunityMessageWithDetails, CommunityWithUnreadCount } from './service.js';
 import { publicFile } from '../files/presenter.js';
 
 export function publicCommunityMessage(message: CommunityMessageWithDetails) {
@@ -16,7 +16,7 @@ export function publicCommunityMessage(message: CommunityMessageWithDetails) {
   };
 }
 
-export function publicCommunity(course: CommunityWithLatestMessage) {
+export function publicCommunity(course: CommunityWithUnreadCount) {
   return {
     course: {
       id: course.id.toString(),
@@ -25,6 +25,7 @@ export function publicCommunity(course: CommunityWithLatestMessage) {
       archived: course.archived,
     },
     readOnly: course.archived,
+    unreadCount: course.unreadCount,
     latestMessage: course.communityMessages[0]
       ? publicCommunityMessage(course.communityMessages[0])
       : null,

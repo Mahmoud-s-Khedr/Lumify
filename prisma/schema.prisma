@@ -72,6 +72,7 @@ model User {
   bookings   Booking[]
   courseReviews CourseReview[]
   communityMessages CommunityMessage[] @relation("CommunityMessageSender")
+  communityReadStates CommunityReadState[]
 
   @@map("users")
 }
@@ -149,6 +150,7 @@ model Course {
   rounds               CourseRound[]
   reviews              CourseReview[]
   communityMessages    CommunityMessage[]
+  communityReadStates  CommunityReadState[]
 
   @@index([archived])
   @@map("courses")
@@ -286,6 +288,19 @@ model CommunityMessageAttachment {
 
   @@index([messageId])
   @@map("community_message_attachments")
+}
+
+model CommunityReadState {
+  courseId           BigInt   @map("course_id")
+  userId             BigInt   @map("user_id")
+  lastReadMessageId  BigInt?  @map("last_read_message_id")
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at")
+  course             Course   @relation(fields: [courseId], references: [id])
+  user               User     @relation(fields: [userId], references: [id])
+
+  @@id([courseId, userId])
+  @@index([userId])
+  @@map("community_read_states")
 }
 
 model Session {

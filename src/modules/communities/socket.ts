@@ -10,11 +10,14 @@ import {
   communityCourseEventSchema,
   communityReauthenticateSchema,
   deleteCommunityMessageSchema,
+  markCommunityReadSchema,
   sendCommunityMessageSchema,
 } from './schemas.js';
 import {
   communityRoom,
   deleteCommunityMessage,
+  listEligibleCommunityCourseIds,
+  markCommunityRead,
   requireCommunityCourse,
   sendCommunityMessage,
 } from './service.js';
@@ -74,7 +77,7 @@ async function emitToEligibleMembers(
   app: FastifyInstance,
   io: Server,
   courseId: bigint,
-  event: 'community:messageCreated' | 'community:messageDeleted',
+  event: 'community:messageCreated' | 'community:messageDeleted' | 'community:read',
   payload: Record<string, unknown>,
 ): Promise<void> {
   const sockets = await io.in(communityRoom(courseId)).fetchSockets();
@@ -105,6 +108,15 @@ async function emitToEligibleMembers(
   );
 }
 
+async function joinEligibleCommunityRooms(
+  socket: { data: Record<string, unknown>; join: (rooms: string[]) => void | Promise<void> },
+  identity: AccessTokenPayload,
+): Promise<string[]> {
+  const courseIds = await listEligibleCommunityCourseIds(identity);
+  await socket.join(courseIds.map(communityRoom));
+  return courseIds.map((courseId) => courseId.toString());
+}
+
 export function registerCommunitySocket(app: FastifyInstance): Server {
   const io = new Server(app.server, {
     cors: {
@@ -132,6 +144,16 @@ export function registerCommunitySocket(app: FastifyInstance): Server {
   });
 
   io.on('connection', (socket) => {
+    void (async () => {
+      try {
+        const identity = await requireSocketIdentity(app, socket);
+        const courseIds = await joinEligibleCommunityRooms(socket, identity);
+        socket.emit('community:ready', { courseIds, error: null });
+      } catch (error) {
+        socket.emit('community:ready', { courseIds: [], error: socketError(error).message });
+      }
+    })();
+
     socket.on('community:reauth', async (payload: unknown, ack?: unknown) => {
       try {
         const { token } = parseRequest(communityReauthenticateSchema, payload);
@@ -194,6 +216,28 @@ export function registerCommunitySocket(app: FastifyInstance): Server {
         const event = { id: message.id.toString(), courseId: message.courseId.toString() };
         await emitToEligibleMembers(app, io, message.courseId, 'community:messageDeleted', event);
         socketSuccess(ack, { message: event });
+      } catch (error) {
+        socketFailure(ack, error);
+      }
+    });
+
+    socket.on('community:read', async (payload: unknown, ack?: unknown) => {
+      try {
+        const identity = await requireSocketIdentity(app, socket);
+        const body = parseRequest(markCommunityReadSchema, payload);
+        const result = await markCommunityRead({
+          courseId: BigInt(body.courseId),
+          identity,
+          messageId: body.messageId ? BigInt(body.messageId) : undefined,
+        });
+        const event = {
+          courseId: result.courseId.toString(),
+          userId: identity.sub,
+          messageId: result.messageId?.toString() ?? null,
+          unreadCount: result.unreadCount,
+        };
+        await emitToEligibleMembers(app, io, result.courseId, 'community:read', event);
+        socketSuccess(ack, { ...event, readCount: result.readCount });
       } catch (error) {
         socketFailure(ack, error);
       }

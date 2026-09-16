@@ -148,20 +148,25 @@ email addresses.
 
 | Method | Path | Access | Purpose |
 | --- | --- | --- | --- |
-| GET | `/communities` | Eligible student or admin | List accessible courses, `readOnly` archive state, and latest visible-message preview. |
+| GET | `/communities` | Eligible student or admin | List accessible courses, `readOnly` archive state, latest visible-message preview, and `unreadCount` (messages from other members not yet read by the current user). |
 | GET | `/communities/:courseId/messages?before=&limit=` | Eligible student or admin | Newest-first history; `limit` defaults to 50 (max 100), and `nextBefore` is the ID for the next page. |
+| POST | `/communities/:courseId/read` | Eligible student or admin | Mark received messages through `{ messageId? }` as read. Omit `messageId` to mark every currently visible message in the community as read. Returns `{ courseId, messageId, readCount, unreadCount }`. |
 
 Connect Socket.IO with `{ auth: { token: accessToken } }`. Every community action verifies the
-socket's current access token and re-checks current course membership. Client events are
-`community:join` and `community:leave` with `{ courseId }`, `community:sendMessage` with
-`{ courseId, content?, attachmentIds? }`, and `community:deleteMessage` with `{ messageId }`.
+socket's current access token and re-checks current course membership. Eligible course communities
+are joined automatically after connection; wait for `community:ready` with `{ courseIds, error }`
+before treating the socket as ready. `community:join` and `community:leave` remain available for
+backwards compatibility, but clients do not need to join their accessible communities manually.
+Client events are `community:sendMessage` with `{ courseId, content?, attachmentIds? }`,
+`community:deleteMessage` with `{ messageId }`, and `community:read` with `{ courseId, messageId? }`.
 When an access token expires, the socket stays connected but actions return
 `{ error: "UNAUTHENTICATED", message }` and it receives no community events. Obtain a fresh token
 through the normal authentication flow, then emit `community:reauth` with `{ token }`; its
 successful acknowledgement is `{ ok: true }` and the socket keeps its joined rooms. Text is
 trimmed and limited to 5,000 characters; each message can have at most ten uploaded community
-attachments. Server events are `community:messageCreated` (a complete public message) and
-`community:messageDeleted` (`{ id, courseId }`). Acknowledgement failures use `{ error, message }`.
+attachments. Server events are `community:messageCreated` (a complete public message),
+`community:messageDeleted` (`{ id, courseId }`), and `community:read`
+(`{ courseId, userId, messageId, unreadCount }`). Acknowledgement failures use `{ error, message }`.
 Authors can delete their own messages; admins can delete any message. Deleted rows remain for
 audit but disappear from history, and their attachments are no longer downloadable by other
 students. Archived communities are fully read-only: both sending and deleting messages return

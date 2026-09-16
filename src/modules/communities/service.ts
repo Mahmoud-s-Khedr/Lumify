@@ -6,6 +6,7 @@ import type { MessageHistoryQuery } from './schemas.js';
 
 export type CommunityIdentity = { sub: string; role: UserRole };
 type CommunityCourse = { id: bigint; title: string; archived: boolean };
+export type CommunityWithUnreadCount = CommunityWithLatestMessage & { unreadCount: number };
 
 export const communityMessageInclude = {
   sender: {
@@ -48,6 +49,18 @@ export function communityRoom(courseId: bigint | string): string {
   return `community:${courseId.toString()}`;
 }
 
+function communityCourseWhere(identity: CommunityIdentity): Prisma.CourseWhereInput | undefined {
+  return identity.role === 'ADMIN'
+    ? undefined
+    : {
+        rounds: {
+          some: {
+            bookings: { some: { studentId: BigInt(identity.sub), status: 'CONFIRMED' } },
+          },
+        },
+      };
+}
+
 /** Communities intentionally use only currently confirmed bookings. */
 export async function requireCommunityCourse(
   courseId: bigint,
@@ -75,21 +88,48 @@ export async function requireCommunityCourse(
 
 export async function listCommunities(
   identity: CommunityIdentity,
-): Promise<CommunityWithLatestMessage[]> {
-  return prisma.course.findMany({
-    where:
-      identity.role === 'ADMIN'
-        ? undefined
-        : {
-            rounds: {
-              some: {
-                bookings: { some: { studentId: BigInt(identity.sub), status: 'CONFIRMED' } },
-              },
-            },
-          },
+): Promise<CommunityWithUnreadCount[]> {
+  const userId = BigInt(identity.sub);
+  const communities = await prisma.course.findMany({
+    where: communityCourseWhere(identity),
     select: communityWithLatestMessage,
     orderBy: { title: 'asc' },
   });
+  const readStates = await prisma.communityReadState.findMany({
+    where: { userId, courseId: { in: communities.map((community) => community.id) } },
+    select: { courseId: true, lastReadMessageId: true },
+  });
+  const lastReadByCourse = new Map(
+    readStates.map((state) => [state.courseId.toString(), state.lastReadMessageId]),
+  );
+  const unreadCounts = await Promise.all(
+    communities.map((community) =>
+      prisma.communityMessage.count({
+        where: {
+          courseId: community.id,
+          senderId: { not: userId },
+          deletedAt: null,
+          ...(lastReadByCourse.get(community.id.toString())
+            ? { id: { gt: lastReadByCourse.get(community.id.toString())! } }
+            : {}),
+        },
+      }),
+    ),
+  );
+  return communities.map((community, index) => ({
+    ...community,
+    unreadCount: unreadCounts[index] ?? 0,
+  }));
+}
+
+export async function listEligibleCommunityCourseIds(
+  identity: CommunityIdentity,
+): Promise<bigint[]> {
+  const courses = await prisma.course.findMany({
+    where: communityCourseWhere(identity),
+    select: { id: true },
+  });
+  return courses.map((course) => course.id);
 }
 
 export async function listCommunityMessages(
@@ -226,4 +266,76 @@ export async function deleteCommunityMessage(input: {
   if (deleted.count === 0)
     throw new AppError(400, 'Message was already deleted.', 'MESSAGE_ALREADY_DELETED');
   return { id: message.id, courseId: message.courseId };
+}
+
+export async function markCommunityRead(input: {
+  courseId: bigint;
+  identity: CommunityIdentity;
+  messageId?: bigint;
+}): Promise<{
+  courseId: bigint;
+  messageId: bigint | null;
+  readCount: number;
+  unreadCount: number;
+}> {
+  const course = await requireCommunityCourse(input.courseId, input.identity);
+  const userId = BigInt(input.identity.sub);
+  const marker = input.messageId
+    ? await prisma.communityMessage.findFirst({
+        where: { id: input.messageId, courseId: course.id, deletedAt: null },
+        select: { id: true },
+      })
+    : await prisma.communityMessage.findFirst({
+        where: { courseId: course.id, deletedAt: null },
+        select: { id: true },
+        orderBy: { id: 'desc' },
+      });
+  if (input.messageId && !marker)
+    throw new AppError(400, 'The message does not belong to this community.', 'INVALID_MESSAGE');
+
+  const previous = await prisma.communityReadState.findUnique({
+    where: { courseId_userId: { courseId: course.id, userId } },
+    select: { lastReadMessageId: true },
+  });
+  const previousMarker = previous?.lastReadMessageId ?? null;
+  const shouldAdvance =
+    marker && (!previousMarker || marker.id > previousMarker) ? marker.id : previousMarker;
+
+  if (shouldAdvance && shouldAdvance !== previousMarker) {
+    await prisma.communityReadState.upsert({
+      where: { courseId_userId: { courseId: course.id, userId } },
+      create: { courseId: course.id, userId, lastReadMessageId: shouldAdvance },
+      update: { lastReadMessageId: shouldAdvance },
+    });
+  }
+
+  const [readCount, unreadCount] = await Promise.all([
+    shouldAdvance
+      ? prisma.communityMessage.count({
+          where: {
+            courseId: course.id,
+            senderId: { not: userId },
+            deletedAt: null,
+            id: {
+              gt: previousMarker ?? BigInt(0),
+              lte: shouldAdvance,
+            },
+          },
+        })
+      : 0,
+    prisma.communityMessage.count({
+      where: {
+        courseId: course.id,
+        senderId: { not: userId },
+        deletedAt: null,
+        ...(shouldAdvance ? { id: { gt: shouldAdvance } } : {}),
+      },
+    }),
+  ]);
+  return {
+    courseId: course.id,
+    messageId: shouldAdvance,
+    readCount,
+    unreadCount,
+  };
 }
