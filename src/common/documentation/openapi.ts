@@ -32,6 +32,7 @@ const errorResponses: Record<string, Response> = {
   403: response('The authenticated user is not permitted to perform this action.', ref('Error')),
   404: response('The requested resource was not found.', ref('Error')),
   409: response('The request conflicts with the current resource state.', ref('Error')),
+  429: response('Too many requests. Please try again later.', ref('Error')),
   500: response('An unexpected server error occurred.', ref('Error')),
 };
 
@@ -482,13 +483,22 @@ export const openapiComponents = {
 
 const operationResponses: Record<string, Record<string, Response>> = {
   'POST /auth/register': {
-    201: response(
-      'Student account created. `otp` is included only when OTP exposure is enabled outside production.',
-      object({ user: ref('AuthUser'), otp: { type: 'string', pattern: '^\\d{6}$' } }, ['user']),
+    202: response(
+      'Email-verification request accepted. No user account is created yet. `otp` is included only when OTP exposure is enabled outside production.',
+      object(
+        {
+          verificationDelivery: { type: 'string', enum: ['sent', 'pending'] },
+          otp: { type: 'string', pattern: '^\\d{6}$' },
+        },
+        ['verificationDelivery'],
+      ),
     ),
   },
   'POST /auth/verify-email': {
-    200: response('Email verified.', object({ user: ref('AuthUser') }, ['user'])),
+    200: response(
+      'Verifies the email and atomically creates the student account from the pending registration. Legacy unverified accounts receive the verified user.',
+      wrapped('user', ref('AuthUser')),
+    ),
   },
   'POST /auth/resend-verification': {
     202: response(

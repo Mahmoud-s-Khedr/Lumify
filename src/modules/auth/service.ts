@@ -1,6 +1,6 @@
 import { createHash, randomInt } from 'node:crypto';
 
-import { AuthTokenType, type User } from '@prisma/client';
+import { AuthTokenType, Prisma, type User } from '@prisma/client';
 
 import { AppError } from '../../common/errors/app-error.js';
 import { hashPassword, verifyPassword } from '../../common/security/passwords.js';
@@ -9,16 +9,19 @@ import { sendOtpEmail } from '../../infrastructure/resend/mailer.js';
 import {
   createAdmin,
   createRefreshSession as createRefreshSessionRecord,
-  createStudent,
+  createVerifiedStudentFromPendingRegistration,
   deleteOtps,
   findRefreshSession,
   findUserByEmail,
   findUserById,
   findStoredValidOtp,
   replaceOtp,
+  replacePendingRegistrationOtp,
   revokeAllRefreshSessions as revokeAllRefreshSessionRecords,
   revokeRefreshSession as revokeRefreshSessionRecord,
   saveRefreshToken as saveRefreshTokenRecord,
+  incrementAuthRateLimit,
+  savePendingRegistrationOtp,
   updateUserPassword,
   updateUserRole,
   verifyUserEmail,
@@ -34,6 +37,58 @@ import type {
 
 export function hashToken(value: string): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+const registrationRateLimits = {
+  ip: { action: 'REGISTER_IP', limit: 10, windowSeconds: 15 * 60 },
+  email: { action: 'REGISTER_EMAIL', limit: 3, windowSeconds: 60 * 60 },
+} as const;
+
+const resendRateLimits = {
+  ip: { action: 'RESEND_IP', limit: 10, windowSeconds: 15 * 60 },
+  email: { action: 'RESEND_EMAIL', limit: 3, windowSeconds: 15 * 60 },
+} as const;
+
+const verificationRateLimits = {
+  ip: { action: 'VERIFY_IP', limit: 20, windowSeconds: 15 * 60 },
+  email: { action: 'VERIFY_EMAIL', limit: 5, windowSeconds: env.OTP_TTL_MINUTES * 60 },
+} as const;
+
+type RateLimit = { action: string; limit: number; windowSeconds: number };
+
+export class OtpDeliveryError extends Error {
+  public constructor(public readonly cause: unknown) {
+    super('Unable to deliver OTP email');
+  }
+}
+
+async function enforceRateLimit(subject: string, rateLimit: RateLimit): Promise<void> {
+  const keyHash = hashToken(`auth-rate-limit:${rateLimit.action}:${subject}`);
+  const count = await incrementAuthRateLimit({ ...rateLimit, keyHash });
+  if (count > rateLimit.limit) {
+    throw new AppError(429, 'Too many requests. Please try again later.', 'RATE_LIMITED');
+  }
+}
+
+export async function enforceRegistrationRateLimits(input: {
+  ip: string;
+  email: string;
+}): Promise<void> {
+  await enforceRateLimit(input.ip, registrationRateLimits.ip);
+  await enforceRateLimit(input.email.toLowerCase(), registrationRateLimits.email);
+}
+
+export async function enforceResendRateLimits(input: { ip: string; email: string }): Promise<void> {
+  await enforceRateLimit(input.ip, resendRateLimits.ip);
+  await enforceRateLimit(input.email.toLowerCase(), resendRateLimits.email);
+}
+
+export async function enforceVerificationRateLimits(input: {
+  ip: string;
+  email: string;
+}): Promise<void> {
+  await enforceRateLimit(input.ip, verificationRateLimits.ip);
+  await enforceRateLimit(input.email.toLowerCase(), verificationRateLimits.email);
 }
 
 export function createOtpCode(): string {
@@ -52,7 +107,51 @@ export async function issueOtp(
   const expiresAt = new Date(Date.now() + env.OTP_TTL_MINUTES * 60_000);
 
   await replaceOtp({ userId: user.id, type, tokenHash: hashToken(code), expiresAt });
-  await sendOtpEmail({ email: user.email, code, purpose: type });
+  try {
+    await sendOtpEmail({ email: user.email, code, purpose: type });
+  } catch (error) {
+    throw new OtpDeliveryError(error);
+  }
+  return otpForResponse(code);
+}
+
+async function issuePendingRegistrationOtp(input: RegistrationInput): Promise<{ otp?: string }> {
+  const code = createOtpCode();
+  const saved = await savePendingRegistrationOtp({
+    email: input.email.toLowerCase(),
+    name: input.name,
+    phone: input.phone,
+    passwordHash: await hashPassword(input.password),
+    tokenHash: hashToken(code),
+    expiresAt: new Date(Date.now() + env.OTP_TTL_MINUTES * 60_000),
+  });
+  if (!saved)
+    throw new AppError(
+      409,
+      'Email verification has already been completed. Finish onboarding before starting again.',
+      'ONBOARDING_IN_PROGRESS',
+    );
+  try {
+    await sendOtpEmail({ email: input.email, code, purpose: AuthTokenType.EMAIL_VERIFICATION });
+  } catch (error) {
+    throw new OtpDeliveryError(error);
+  }
+  return otpForResponse(code);
+}
+
+async function resendPendingRegistrationOtp(email: string): Promise<{ otp?: string }> {
+  const code = createOtpCode();
+  const replaced = await replacePendingRegistrationOtp({
+    email,
+    tokenHash: hashToken(code),
+    expiresAt: new Date(Date.now() + env.OTP_TTL_MINUTES * 60_000),
+  });
+  if (!replaced) return {};
+  try {
+    await sendOtpEmail({ email, code, purpose: AuthTokenType.EMAIL_VERIFICATION });
+  } catch (error) {
+    throw new OtpDeliveryError(error);
+  }
   return otpForResponse(code);
 }
 
@@ -119,9 +218,10 @@ export async function revokeAllRefreshSessions(userId: bigint): Promise<void> {
   await revokeAllRefreshSessionRecords(userId);
 }
 
-export async function registerStudent(input: RegistrationInput): Promise<{
-  user: User;
+export async function startRegistration(input: RegistrationInput): Promise<{
   otp: { otp?: string };
+  verificationDelivery: 'sent' | 'pending';
+  deliveryError?: unknown;
 }> {
   const email = input.email.toLowerCase();
   const existing = await findUserByEmail(email);
@@ -132,32 +232,71 @@ export async function registerStudent(input: RegistrationInput): Promise<{
       'EMAIL_ALREADY_REGISTERED',
     );
 
-  const user = await createStudent({
-    name: input.name,
-    email,
-    passwordHash: await hashPassword(input.password),
-  });
-  return { user, otp: await issueOtp(user, AuthTokenType.EMAIL_VERIFICATION) };
+  try {
+    return {
+      otp: await issuePendingRegistrationOtp(input),
+      verificationDelivery: 'sent',
+    };
+  } catch (error) {
+    if (error instanceof OtpDeliveryError) {
+      return {
+        otp: {},
+        verificationDelivery: 'pending',
+        deliveryError: error.cause,
+      };
+    }
+    throw error;
+  }
 }
 
 export async function verifyEmail(input: OtpInput): Promise<User> {
   const user = await findUserByEmail(input.email.toLowerCase());
-  if (
-    !user ||
-    !(await consumeOtp({
-      userId: user.id,
-      type: AuthTokenType.EMAIL_VERIFICATION,
-      code: input.code,
-    }))
-  ) {
-    throw new AppError(400, 'The verification code is invalid or expired.', 'INVALID_OTP');
+  if (user) {
+    if (
+      !(await consumeOtp({
+        userId: user.id,
+        type: AuthTokenType.EMAIL_VERIFICATION,
+        code: input.code,
+      }))
+    ) {
+      throw new AppError(400, 'The verification code is invalid or expired.', 'INVALID_OTP');
+    }
+    return verifyUserEmail(user.id);
   }
-  return verifyUserEmail(user.id);
+
+  try {
+    const user = await createVerifiedStudentFromPendingRegistration({
+      email: input.email.toLowerCase(),
+      otpHash: hashToken(input.code),
+    });
+    if (!user)
+      throw new AppError(400, 'The verification code is invalid or expired.', 'INVALID_OTP');
+    return user;
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      throw new AppError(
+        409,
+        'An account with this email already exists.',
+        'EMAIL_ALREADY_REGISTERED',
+      );
+    }
+    throw error;
+  }
 }
 
 export async function resendEmailVerification(input: EmailInput): Promise<{ otp?: string }> {
   const user = await findUserByEmail(input.email.toLowerCase());
-  return user && !user.emailVerified ? issueOtp(user, AuthTokenType.EMAIL_VERIFICATION) : {};
+  if (user) return !user.emailVerified ? issueOtp(user, AuthTokenType.EMAIL_VERIFICATION) : {};
+  try {
+    return await resendPendingRegistrationOtp(input.email.toLowerCase());
+  } catch (error) {
+    if (
+      error instanceof OtpDeliveryError ||
+      (error instanceof AppError && error.code === 'ONBOARDING_IN_PROGRESS')
+    )
+      return {};
+    throw error;
+  }
 }
 
 export async function authenticate(input: CredentialsInput): Promise<User> {

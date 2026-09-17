@@ -30,9 +30,9 @@ representations are `GET /docs/json` and `GET /docs/yaml`.
 
 | Method | Path | Access | Body / purpose |
 | --- | --- | --- | --- |
-| POST | `/auth/register` | Public | Create a student: `{ name, email, password }`; returns the user and development/notification OTP payload. |
-| POST | `/auth/verify-email` | Public | Verify `{ email, code }`, where `code` is six digits. |
-| POST | `/auth/resend-verification` | Public | Resend verification code for `{ email }`; always responds `202`. |
+| POST | `/auth/register` | Public | Start onboarding with `{ name, email, phone, password }`; returns `202`, `verificationDelivery` (`sent` or `pending`), and the development/notification OTP payload. It does not create a user. Rate-limited by IP and email. |
+| POST | `/auth/verify-email` | Public | Verify and create the student with `{ email, code }`, where `code` is six digits. The account is created only after the OTP is valid. |
+| POST | `/auth/resend-verification` | Public | Resend verification code for `{ email }`; responds `202` when accepted and `429` when rate-limited. |
 | POST | `/auth/login` | Public | Authenticate `{ email, password }`; returns `accessToken` and `user`, and sets refresh cookie. |
 | POST | `/auth/refresh` | Refresh cookie | Rotate the refresh session and return a new `accessToken`. |
 | POST | `/auth/logout` | Optional refresh cookie | Revoke the current refresh session and clear its cookie. |

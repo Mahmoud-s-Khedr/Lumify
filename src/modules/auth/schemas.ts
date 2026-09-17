@@ -5,7 +5,12 @@ export const credentialsSchema = z.object({
   password: z.string().min(8).max(200),
 });
 
-export const registrationSchema = credentialsSchema.extend({ name: z.string().min(1).max(255) });
+export const registrationSchema = credentialsSchema
+  .extend({
+    name: z.string().trim().min(1).max(255),
+    phone: z.string().trim().min(1).max(50),
+  })
+  .strict();
 
 export const emailSchema = z.object({ email: z.string().email() });
 

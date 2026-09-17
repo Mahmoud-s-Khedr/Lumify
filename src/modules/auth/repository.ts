@@ -1,4 +1,4 @@
-import type { AuthTokenType, User, UserRole } from '@prisma/client';
+import { Prisma, type AuthTokenType, type User, type UserRole } from '@prisma/client';
 
 import { prisma } from '../../infrastructure/database/prisma.js';
 
@@ -33,6 +33,116 @@ export function findStoredValidOtp(input: {
 
 export async function deleteOtps(userId: bigint, type: AuthTokenType): Promise<void> {
   await prisma.authToken.deleteMany({ where: { userId, type } });
+}
+
+export async function incrementAuthRateLimit(input: {
+  action: string;
+  keyHash: string;
+  windowSeconds: number;
+}): Promise<number> {
+  await prisma.authRateLimit.deleteMany({
+    where: { updatedAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1_000) } },
+  });
+  const rows = await prisma.$queryRaw<Array<{ count: number }>>(Prisma.sql`
+    INSERT INTO auth_rate_limits (action, key_hash, count, window_started_at, updated_at)
+    VALUES (${input.action}, ${input.keyHash}, 1, NOW(), NOW())
+    ON CONFLICT (action, key_hash) DO UPDATE
+    SET
+      count = CASE
+        WHEN auth_rate_limits.window_started_at <= NOW() - (${input.windowSeconds}::double precision * INTERVAL '1 second')
+          THEN 1
+        ELSE auth_rate_limits.count + 1
+      END,
+      window_started_at = CASE
+        WHEN auth_rate_limits.window_started_at <= NOW() - (${input.windowSeconds}::double precision * INTERVAL '1 second')
+          THEN NOW()
+        ELSE auth_rate_limits.window_started_at
+      END,
+      updated_at = NOW()
+    RETURNING count
+  `);
+  return rows[0]!.count;
+}
+
+export async function savePendingRegistrationOtp(input: {
+  email: string;
+  name: string;
+  phone: string;
+  passwordHash: string;
+  tokenHash: string;
+  expiresAt: Date;
+}): Promise<boolean> {
+  await prisma.pendingRegistration.deleteMany({
+    where: { updatedAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1_000) } },
+  });
+  const rows = await prisma.$queryRaw<Array<{ email: string }>>(Prisma.sql`
+    INSERT INTO pending_registrations
+      (email, name, phone, password_hash, otp_hash, otp_expires_at, created_at, updated_at)
+    VALUES
+      (${input.email}, ${input.name}, ${input.phone}, ${input.passwordHash}, ${input.tokenHash}, ${input.expiresAt}, NOW(), NOW())
+    ON CONFLICT (email) DO UPDATE
+    SET
+      name = EXCLUDED.name,
+      phone = EXCLUDED.phone,
+      password_hash = EXCLUDED.password_hash,
+      otp_hash = EXCLUDED.otp_hash,
+      otp_expires_at = EXCLUDED.otp_expires_at,
+      completed_at = NULL,
+      updated_at = NOW()
+    WHERE pending_registrations.completed_at IS NULL
+    RETURNING email
+  `);
+  return rows.length === 1;
+}
+
+export async function replacePendingRegistrationOtp(input: {
+  email: string;
+  tokenHash: string;
+  expiresAt: Date;
+}): Promise<boolean> {
+  const updated = await prisma.pendingRegistration.updateMany({
+    where: { email: input.email, completedAt: null },
+    data: { otpHash: input.tokenHash, otpExpiresAt: input.expiresAt },
+  });
+  return updated.count === 1;
+}
+
+export async function createVerifiedStudentFromPendingRegistration(input: {
+  email: string;
+  otpHash: string;
+}): Promise<User | null> {
+  return prisma.$transaction(async (tx) => {
+    const pending = await tx.pendingRegistration.findFirst({
+      where: {
+        email: input.email,
+        otpHash: input.otpHash,
+        otpExpiresAt: { gt: new Date() },
+        completedAt: null,
+      },
+    });
+    if (!pending) return null;
+
+    const claimed = await tx.pendingRegistration.updateMany({
+      where: {
+        email: input.email,
+        otpHash: input.otpHash,
+        otpExpiresAt: { gt: new Date() },
+        completedAt: null,
+      },
+      data: { completedAt: new Date() },
+    });
+    if (claimed.count !== 1) return null;
+
+    return tx.user.create({
+      data: {
+        email: input.email,
+        name: pending.name,
+        phone: pending.phone,
+        passwordHash: pending.passwordHash,
+        emailVerified: true,
+      },
+    });
+  });
 }
 
 export async function createRefreshSession(input: {
@@ -78,6 +188,7 @@ export function findUserById(userId: bigint) {
 export function createStudent(input: {
   name: string;
   email: string;
+  phone: string;
   passwordHash: string;
 }): Promise<User> {
   return prisma.user.create({ data: input });

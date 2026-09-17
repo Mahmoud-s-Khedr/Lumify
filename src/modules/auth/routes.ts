@@ -18,8 +18,11 @@ import {
   authenticate,
   changePassword,
   createRefreshSession,
+  enforceRegistrationRateLimits,
+  enforceResendRateLimits,
+  enforceVerificationRateLimits,
   revokeRefreshSession,
-  registerStudent,
+  startRegistration,
   requestPasswordReset,
   resendEmailVerification,
   resetPassword,
@@ -79,8 +82,18 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       const body = parseRequest(registrationSchema, request.body);
-      const { user, otp } = await registerStudent(body);
-      return reply.code(201).send({ user: publicAuthUser(user), ...otp });
+      await enforceRegistrationRateLimits({ ip: request.ip, email: body.email });
+      const { otp, verificationDelivery, deliveryError } = await startRegistration(body);
+      if (verificationDelivery === 'pending') {
+        request.log.warn(
+          { err: deliveryError, email: body.email },
+          'Verification email delivery is pending',
+        );
+      }
+      return reply.code(202).send({
+        verificationDelivery,
+        ...otp,
+      });
     },
   );
 
@@ -95,6 +108,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request) => {
       const body = parseRequest(otpSchema, request.body);
+      await enforceVerificationRateLimits({ ip: request.ip, email: body.email });
       return { user: publicAuthUser(await verifyEmail(body)) };
     },
   );
@@ -110,6 +124,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       const body = parseRequest(emailSchema, request.body);
+      await enforceResendRateLimits({ ip: request.ip, email: body.email });
       const otp = await resendEmailVerification(body);
       return reply.code(202).send(otp);
     },

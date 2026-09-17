@@ -103,6 +103,33 @@ model AuthToken {
   @@map("auth_tokens")
 }
 
+model AuthRateLimit {
+  action          String   @db.VarChar(50)
+  keyHash         String   @map("key_hash") @db.Char(64)
+  count           Int      @default(0)
+  windowStartedAt DateTime @map("window_started_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@id([action, keyHash])
+  @@index([updatedAt])
+  @@map("auth_rate_limits")
+}
+
+model PendingRegistration {
+  email        String    @id @db.VarChar(255)
+  name         String    @db.VarChar(255)
+  phone        String    @db.VarChar(50)
+  passwordHash String    @map("password_hash")
+  otpHash      String    @map("otp_hash")
+  otpExpiresAt DateTime  @map("otp_expires_at")
+  completedAt  DateTime? @map("completed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([updatedAt])
+  @@map("pending_registrations")
+}
+
 model File {
   id           BigInt   @id @default(autoincrement())
   storageKey   String   @map("storage_key")

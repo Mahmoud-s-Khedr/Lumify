@@ -14,6 +14,8 @@ describe('Phase 2 authentication and configuration journeys', () => {
   afterEach(async () => {
     await prisma.authSession.deleteMany();
     await prisma.authToken.deleteMany();
+    await prisma.authRateLimit.deleteMany();
+    await prisma.pendingRegistration.deleteMany();
     await prisma.paymentMethod.deleteMany();
     await prisma.file.deleteMany();
     await prisma.user.deleteMany();
@@ -23,20 +25,33 @@ describe('Phase 2 authentication and configuration journeys', () => {
     await prisma.$disconnect();
   });
 
-  it('registers, exposes the test OTP, verifies, and logs in', async () => {
+  it('creates an account only after the email owner completes onboarding', async () => {
     const registration = await api<{ otp?: string }>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ name: 'Student', email: 'student@example.com', password }),
+      body: JSON.stringify({
+        name: 'Student',
+        email: 'student@example.com',
+        phone: '01000000000',
+        password,
+      }),
     });
-    expect(registration.status).toBe(201);
+    expect(registration.status).toBe(202);
     const registered = registration.body;
     expect(registered.otp).toMatch(/^\d{6}$/);
+    expect(registered).toMatchObject({ verificationDelivery: 'sent' });
+    expect(await prisma.user.findUnique({ where: { email: 'student@example.com' } })).toBeNull();
 
-    const verification = await api('/auth/verify-email', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'student@example.com', code: registered.otp }),
-    });
+    const verification = await api<{ user: { phone: string; emailVerified: boolean } }>(
+      '/auth/verify-email',
+      {
+        method: 'POST',
+        body: JSON.stringify({ email: 'student@example.com', code: registered.otp }),
+      },
+    );
     expect(verification.status).toBe(200);
+    expect(verification.body).toMatchObject({
+      user: { phone: '01000000000', emailVerified: true },
+    });
 
     const login = await api<{ accessToken: string }>('/auth/login', {
       method: 'POST',
@@ -53,6 +68,88 @@ describe('Phase 2 authentication and configuration journeys', () => {
     });
     expect(refresh.status).toBe(200);
     expect(refresh.body).toMatchObject({ accessToken: expect.any(String) });
+  });
+
+  it('requires and persists the phone number supplied at registration', async () => {
+    const missingPhone = await api('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Student', email: 'phone@example.com', password }),
+    });
+    expect(missingPhone.status).toBe(400);
+
+    const registration = await api<{ otp: string }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Student',
+        email: 'phone@example.com',
+        phone: '01000000000',
+        password,
+      }),
+    });
+
+    const verification = await api<{ user: { phone: string } }>('/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'phone@example.com', code: registration.body.otp }),
+    });
+    expect(verification.status).toBe(200);
+    expect(verification.body.user.phone).toBe('01000000000');
+  });
+
+  it('allows concurrent email claims without creating an account', async () => {
+    const body = JSON.stringify({
+      name: 'Student',
+      email: 'duplicate@example.com',
+      phone: '01000000000',
+      password,
+    });
+    const responses = await Promise.all([
+      api('/auth/register', { method: 'POST', body }),
+      api('/auth/register', { method: 'POST', body }),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([202, 202]);
+    expect(await prisma.user.findUnique({ where: { email: 'duplicate@example.com' } })).toBeNull();
+  });
+
+  it('creates the account from the pending registration only after OTP verification', async () => {
+    const registration = await api<{ otp: string }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Mailbox owner',
+        email: 'owner@example.com',
+        phone: '01000000000',
+        password,
+      }),
+    });
+    const verification = await api('/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'owner@example.com', code: registration.body.otp }),
+    });
+    expect(verification.status).toBe(200);
+    expect(verification.body).toMatchObject({ user: { name: 'Mailbox owner' } });
+  });
+
+  it('limits OTP verification attempts per email', async () => {
+    const registration = await api('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Student',
+        email: 'otp-limit@example.com',
+        phone: '01000000000',
+        password,
+      }),
+    });
+    expect(registration.status).toBe(202);
+
+    const attempts = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        api('/auth/verify-email', {
+          method: 'POST',
+          body: JSON.stringify({ email: 'otp-limit@example.com', code: '000000' }),
+        }),
+      ),
+    );
+    expect(attempts.filter((response) => response.status === 400)).toHaveLength(5);
+    expect(attempts.filter((response) => response.status === 429)).toHaveLength(1);
   });
 
   it('resets the password and invalidates the old password', async () => {
