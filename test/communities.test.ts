@@ -53,20 +53,6 @@ function signShortLivedAccessToken(user: { id: bigint; role: string; email: stri
   return `${header}.${payload}.${signature}`;
 }
 
-function expectNoEvent(socket: Socket, event: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const onEvent = () => {
-      clearTimeout(timeout);
-      reject(new Error(`Unexpected ${event} event`));
-    };
-    const timeout = setTimeout(() => {
-      socket.off(event, onEvent);
-      resolve();
-    }, 100);
-    socket.once(event, onEvent);
-  });
-}
-
 describe('Course community journeys', () => {
   beforeAll(async () => {
     await prisma.$connect();
@@ -161,25 +147,19 @@ describe('Course community journeys', () => {
     });
     expect(adminCommunities.body.communities).toHaveLength(1);
 
-    const [studentSocket, adminSocket] = await Promise.all([
-      connect(studentLogin.body.accessToken),
-      connect(adminLogin.body.accessToken),
+    const [studentConnection, adminConnection] = await Promise.all([
+      connectWithReady(studentLogin.body.accessToken),
+      connectWithReady(adminLogin.body.accessToken),
     ]);
+    const { socket: studentSocket } = studentConnection;
+    const { socket: adminSocket } = adminConnection;
     try {
       // Event arguments are untrusted: a non-function acknowledgement must not crash the server.
-      studentSocket.emit('community:join', { courseId: course.id.toString() }, { malformed: true });
+      studentSocket.emit('community:read', { courseId: course.id.toString() }, { malformed: true });
       await new Promise((resolve) => setTimeout(resolve, 25));
-      expect(
-        await acknowledge(studentSocket, 'community:join', { courseId: course.id.toString() }),
-      ).toMatchObject({
-        ok: true,
-      });
       expect((await api('/health')).status).toBe(200);
-      expect(
-        await acknowledge(adminSocket, 'community:join', { courseId: course.id.toString() }),
-      ).toMatchObject({
-        ok: true,
-      });
+      expect(studentConnection.ready).toEqual({ courseIds: [course.id.toString()], error: null });
+      expect(adminConnection.ready).toEqual({ courseIds: [course.id.toString()], error: null });
       const delivered = new Promise<Record<string, unknown>>((resolve) =>
         adminSocket.once('community:messageCreated', resolve),
       );
@@ -436,7 +416,7 @@ describe('Course community journeys', () => {
     await expect(prisma.course.findUnique({ where: { id: course.id } })).resolves.not.toBeNull();
   });
 
-  it('requires reauthentication after a token expires without losing room membership', async () => {
+  it('keeps an authenticated socket usable after its handshake token expires', async () => {
     const [student, admin] = await Promise.all([
       prisma.user.create({
         data: {
@@ -457,7 +437,7 @@ describe('Course community journeys', () => {
       }),
     ]);
     const course = await prisma.course.create({
-      data: { title: 'Reauthentication course', price: 100 },
+      data: { title: 'Stateful socket course', price: 100 },
     });
     const round = await prisma.courseRound.create({
       data: {
@@ -474,59 +454,33 @@ describe('Course community journeys', () => {
       method: 'POST',
       body: JSON.stringify({ email: admin.email, password }),
     });
-    const [studentSocket, adminSocket] = await Promise.all([
-      connect(signShortLivedAccessToken(student)),
-      connect(adminLogin.body.accessToken),
+    const [studentConnection, adminConnection] = await Promise.all([
+      connectWithReady(signShortLivedAccessToken(student)),
+      connectWithReady(adminLogin.body.accessToken),
     ]);
+    const { socket: studentSocket } = studentConnection;
+    const { socket: adminSocket } = adminConnection;
     try {
-      await expect(
-        acknowledge(studentSocket, 'community:join', { courseId: course.id.toString() }),
-      ).resolves.toMatchObject({ ok: true });
-      await expect(
-        acknowledge(adminSocket, 'community:join', { courseId: course.id.toString() }),
-      ).resolves.toMatchObject({ ok: true });
+      expect(studentConnection.ready).toEqual({ courseIds: [course.id.toString()], error: null });
+      expect(adminConnection.ready).toEqual({ courseIds: [course.id.toString()], error: null });
 
       await new Promise((resolve) => setTimeout(resolve, 2_100));
-      await expect(
-        acknowledge(studentSocket, 'community:sendMessage', {
-          courseId: course.id.toString(),
-          content: 'Expired message',
-        }),
-      ).resolves.toMatchObject({ error: 'UNAUTHENTICATED' });
-
-      const noDelivery = expectNoEvent(studentSocket, 'community:messageCreated');
-      await expect(
-        acknowledge(adminSocket, 'community:sendMessage', {
-          courseId: course.id.toString(),
-          content: 'Admin message while student is expired',
-        }),
-      ).resolves.toMatchObject({ ok: true });
-      await noDelivery;
-
-      const freshLogin = await api<{ accessToken: string }>('/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email: student.email, password }),
-      });
-      await expect(
-        acknowledge(studentSocket, 'community:reauth', { token: freshLogin.body.accessToken }),
-      ).resolves.toEqual({ ok: true });
-
       const delivered = new Promise<Record<string, unknown>>((resolve) =>
         studentSocket.once('community:messageCreated', resolve),
       );
       await expect(
         acknowledge(adminSocket, 'community:sendMessage', {
           courseId: course.id.toString(),
-          content: 'Admin message after reauthentication',
+          content: 'Admin message after token expiry',
         }),
       ).resolves.toMatchObject({ ok: true });
       await expect(delivered).resolves.toMatchObject({
-        content: 'Admin message after reauthentication',
+        content: 'Admin message after token expiry',
       });
       await expect(
         acknowledge(studentSocket, 'community:sendMessage', {
           courseId: course.id.toString(),
-          content: 'Student message after reauthentication',
+          content: 'Student message after token expiry',
         }),
       ).resolves.toMatchObject({ ok: true });
     } finally {

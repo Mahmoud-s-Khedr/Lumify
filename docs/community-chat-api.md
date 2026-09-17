@@ -201,9 +201,6 @@ The server automatically joins every eligible community. Wait for `community:rea
 
 | Event | Payload | Successful acknowledgement |
 | --- | --- | --- |
-| `community:reauth` | `{ token }` | `{ ok: true }` |
-| `community:join` | `{ courseId }` | `{ ok: true, courseId, readOnly }` |
-| `community:leave` | `{ courseId }` | `{ ok: true, courseId }` |
 | `community:sendMessage` | `{ courseId, content?, attachmentIds? }` | `{ ok: true, message }` |
 | `community:deleteMessage` | `{ messageId }` | `{ ok: true, message: { id, courseId } }` |
 | `community:read` | `{ courseId, messageId? }` | `{ ok: true, courseId, userId, messageId, unreadCount, readCount }` |
@@ -271,25 +268,8 @@ Common error codes include `UNAUTHENTICATED`, `COMMUNITY_ACCESS_FORBIDDEN`, `COM
 
 Students may delete their own messages; admins may delete any message. Deleted messages remain stored for audit but disappear from normal history. Archived communities remain readable but do not allow sending or deleting messages.
 
-## Refreshing Socket Authentication
+## Socket authentication lifetime
 
-The access token is short-lived. The refresh token is kept in the HTTP-only `lumify_refresh_token` cookie, so it is not available to JavaScript.
-
-When the access token expires, obtain a new one through REST, then update the existing socket:
-
-```ts
-const refresh = await fetch('/auth/refresh', {
-  method: 'POST',
-  credentials: 'include',
-});
-
-const { accessToken } = await refresh.json();
-
-socket.emit('community:reauth', { token: accessToken }, (result) => {
-  if (!result.ok) {
-    // The user must sign in again.
-  }
-});
-```
-
-`POST /auth/refresh` rotates the refresh session and returns a new access token. `community:reauth` applies that access token to the existing Socket.IO connection. Before successful reauthentication, the socket cannot send messages or receive live community events.
+The access token is checked once when the Socket.IO connection is established. The authenticated
+socket remains usable until it disconnects, even if that handshake token later expires. On a new
+connection (including a Socket.IO reconnection), the client must provide a valid access token.

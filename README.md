@@ -157,14 +157,13 @@ Configure the private R2 bucket CORS policy for the frontend origins in `CORS_OR
 
 ## Course communities
 
-Socket.IO is served from the API host. Connect with the JWT access token in
-`handshake.auth.token`, then join a course room with `community:join`. The server verifies the
-access token and current course eligibility for every community action and before each delivery.
-An expired socket stays connected but cannot act or receive community events until the client emits
-`community:reauth` with `{ token: freshAccessToken }`. Confirmed students can access communities
-for any course round they are currently confirmed in; admins can access all communities. Archived
-courses remain readable but prohibit both sending and deleting messages. This deployment runs one
-API instance; horizontal scaling requires a Socket.IO Redis adapter (or equivalent shared pub/sub).
+Socket.IO is served from the API host. The server authenticates the connection once from the JWT
+access token in `handshake.auth.token`, then automatically joins the socket to every eligible
+course community. It re-checks current course eligibility for every community action and before
+each delivery. Confirmed students can access communities for any course round they are currently
+confirmed in; admins can access all communities. Archived courses remain readable but prohibit both
+sending and deleting messages. This deployment runs one API instance; horizontal scaling requires a
+Socket.IO Redis adapter (or equivalent shared pub/sub).
 
 ## Commands
 

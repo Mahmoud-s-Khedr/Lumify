@@ -7,8 +7,6 @@ import { parseRequest } from '../../common/validation/request.js';
 import { corsOrigin } from '../../config/env.js';
 import { publicCommunityMessage } from './presenter.js';
 import {
-  communityCourseEventSchema,
-  communityReauthenticateSchema,
   deleteCommunityMessageSchema,
   markCommunityReadSchema,
   sendCommunityMessageSchema,
@@ -53,28 +51,14 @@ function socketFailure(ack: unknown, error: unknown): void {
   acknowledge(ack, socketError(error));
 }
 
-function unauthenticatedError(): AppError {
-  return new AppError(401, 'Authentication is required.', 'UNAUTHENTICATED');
-}
-
-async function requireSocketIdentity(
-  app: FastifyInstance,
-  socket: { data: Record<string, unknown> },
-): Promise<AccessTokenPayload> {
-  const token = socket.data.token;
-  if (typeof token !== 'string' || token.length === 0) throw unauthenticatedError();
-
-  try {
-    const identity = (await app.jwt.verify(token)) as AccessTokenPayload;
-    socket.data.identity = identity;
-    return identity;
-  } catch {
-    throw unauthenticatedError();
-  }
+function requireSocketIdentity(socket: { data: Record<string, unknown> }): AccessTokenPayload {
+  const identity = socket.data.identity;
+  if (!identity || typeof identity !== 'object')
+    throw new AppError(401, 'Authentication is required.', 'UNAUTHENTICATED');
+  return identity as AccessTokenPayload;
 }
 
 async function emitToEligibleMembers(
-  app: FastifyInstance,
   io: Server,
   courseId: bigint,
   event: 'community:messageCreated' | 'community:messageDeleted' | 'community:read',
@@ -84,8 +68,8 @@ async function emitToEligibleMembers(
   await Promise.all(
     sockets.map(async (member) => {
       try {
-        // A booking can be cancelled after join; remove a socket that no longer has access,
-        // even when its otherwise trusted connection token has expired.
+        // A booking can be cancelled after join, so membership is checked again before every
+        // delivery even though socket authentication is established only during its handshake.
         await requireCommunityCourse(courseId, member.data.identity as AccessTokenPayload);
       } catch (error) {
         if (
@@ -95,15 +79,7 @@ async function emitToEligibleMembers(
           await member.leave(communityRoom(courseId));
         return;
       }
-
-      try {
-        // Expired credentials do not disconnect the socket or discard its room state. A
-        // successful community:reauth will let it receive future messages again.
-        await requireSocketIdentity(app, member);
-        member.emit(event, payload);
-      } catch {
-        // An invalid recipient token only suppresses delivery; it does not remove the room.
-      }
+      member.emit(event, payload);
     }),
   );
 }
@@ -134,7 +110,6 @@ export function registerCommunitySocket(app: FastifyInstance): Server {
     }
     try {
       socket.data.identity = (await app.jwt.verify(token)) as AccessTokenPayload;
-      socket.data.token = token;
       return next();
     } catch {
       const error = new Error('Authentication is required.');
@@ -146,7 +121,7 @@ export function registerCommunitySocket(app: FastifyInstance): Server {
   io.on('connection', (socket) => {
     void (async () => {
       try {
-        const identity = await requireSocketIdentity(app, socket);
+        const identity = requireSocketIdentity(socket);
         const courseIds = await joinEligibleCommunityRooms(socket, identity);
         socket.emit('community:ready', { courseIds, error: null });
       } catch (error) {
@@ -154,45 +129,9 @@ export function registerCommunitySocket(app: FastifyInstance): Server {
       }
     })();
 
-    socket.on('community:reauth', async (payload: unknown, ack?: unknown) => {
-      try {
-        const { token } = parseRequest(communityReauthenticateSchema, payload);
-        const identity = (await app.jwt.verify(token)) as AccessTokenPayload;
-        socket.data.token = token;
-        socket.data.identity = identity;
-        socketSuccess(ack);
-      } catch (error) {
-        socketFailure(ack, error instanceof AppError ? error : unauthenticatedError());
-      }
-    });
-
-    socket.on('community:join', async (payload: unknown, ack?: unknown) => {
-      try {
-        const identity = await requireSocketIdentity(app, socket);
-        const { courseId } = parseRequest(communityCourseEventSchema, payload);
-        const course = await requireCommunityCourse(BigInt(courseId), identity);
-        await socket.join(communityRoom(course.id));
-        socketSuccess(ack, { courseId: course.id.toString(), readOnly: course.archived });
-      } catch (error) {
-        socketFailure(ack, error);
-      }
-    });
-
-    socket.on('community:leave', async (payload: unknown, ack?: unknown) => {
-      try {
-        const identity = await requireSocketIdentity(app, socket);
-        const { courseId } = parseRequest(communityCourseEventSchema, payload);
-        const course = await requireCommunityCourse(BigInt(courseId), identity);
-        await socket.leave(communityRoom(course.id));
-        socketSuccess(ack, { courseId: course.id.toString() });
-      } catch (error) {
-        socketFailure(ack, error);
-      }
-    });
-
     socket.on('community:sendMessage', async (payload: unknown, ack?: unknown) => {
       try {
-        const identity = await requireSocketIdentity(app, socket);
+        const identity = requireSocketIdentity(socket);
         const body = parseRequest(sendCommunityMessageSchema, payload);
         const { course, message } = await sendCommunityMessage({
           courseId: BigInt(body.courseId),
@@ -201,7 +140,7 @@ export function registerCommunitySocket(app: FastifyInstance): Server {
           attachmentIds: (body.attachmentIds ?? []).map(BigInt),
         });
         const publicMessage = publicCommunityMessage(message);
-        await emitToEligibleMembers(app, io, course.id, 'community:messageCreated', publicMessage);
+        await emitToEligibleMembers(io, course.id, 'community:messageCreated', publicMessage);
         socketSuccess(ack, { message: publicMessage });
       } catch (error) {
         socketFailure(ack, error);
@@ -210,11 +149,11 @@ export function registerCommunitySocket(app: FastifyInstance): Server {
 
     socket.on('community:deleteMessage', async (payload: unknown, ack?: unknown) => {
       try {
-        const identity = await requireSocketIdentity(app, socket);
+        const identity = requireSocketIdentity(socket);
         const { messageId } = parseRequest(deleteCommunityMessageSchema, payload);
         const message = await deleteCommunityMessage({ messageId: BigInt(messageId), identity });
         const event = { id: message.id.toString(), courseId: message.courseId.toString() };
-        await emitToEligibleMembers(app, io, message.courseId, 'community:messageDeleted', event);
+        await emitToEligibleMembers(io, message.courseId, 'community:messageDeleted', event);
         socketSuccess(ack, { message: event });
       } catch (error) {
         socketFailure(ack, error);
@@ -223,7 +162,7 @@ export function registerCommunitySocket(app: FastifyInstance): Server {
 
     socket.on('community:read', async (payload: unknown, ack?: unknown) => {
       try {
-        const identity = await requireSocketIdentity(app, socket);
+        const identity = requireSocketIdentity(socket);
         const body = parseRequest(markCommunityReadSchema, payload);
         const result = await markCommunityRead({
           courseId: BigInt(body.courseId),
@@ -236,7 +175,7 @@ export function registerCommunitySocket(app: FastifyInstance): Server {
           messageId: result.messageId?.toString() ?? null,
           unreadCount: result.unreadCount,
         };
-        await emitToEligibleMembers(app, io, result.courseId, 'community:read', event);
+        await emitToEligibleMembers(io, result.courseId, 'community:read', event);
         socketSuccess(ack, { ...event, readCount: result.readCount });
       } catch (error) {
         socketFailure(ack, error);
