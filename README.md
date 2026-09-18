@@ -104,34 +104,46 @@ docker compose down --volumes
 
 ## Environment variables
 
-| Variable                       | Default                 | Purpose                                                               |
-| ------------------------------ | ----------------------- | --------------------------------------------------------------------- |
-| `NODE_ENV`                     | `development`           | Application environment: `development`, `test`, or `production`.      |
-| `HOST`                         | `0.0.0.0`               | Interface on which Fastify listens.                                   |
-| `PORT`                         | `3000`                  | HTTP port.                                                            |
-| `TRUST_PROXY`                  | `false`                 | Trust reverse-proxy headers; enable only behind the production proxy. |
-| `DATABASE_URL`                 | —                       | PostgreSQL connection URL. Required outside Docker Compose defaults.  |
-| `LOG_LEVEL`                    | `info`                  | Pino log level.                                                       |
-| `CORS_ORIGIN`                  | `http://localhost:5173` | Comma-separated allowed browser origins; `*` allows all origins.      |
-| `JWT_ACCESS_SECRET`            | Development-only value  | At least 32 characters; required in production.                       |
-| `JWT_REFRESH_SECRET`           | Development-only value  | At least 32 characters; required in production.                       |
-| `ACCESS_TOKEN_TTL`             | `15m`                   | Access-token lifetime.                                                |
-| `REFRESH_TOKEN_TTL_DAYS`       | `30`                    | Rotated refresh-session lifetime.                                     |
-| `OTP_TTL_MINUTES`              | `10`                    | Email-verification/reset OTP lifetime.                                |
-| `EXPOSE_OTP_IN_RESPONSE`       | `false`                 | Return OTPs in API responses; use only for non-public staging.        |
-| `EMAIL_DELIVERY_ENABLED`       | `true`                  | Send OTPs through Resend; set `false` only for non-public staging.    |
-| `RESEND_API_KEY`               | —                       | Resend credential; required in production.                            |
-| `RESEND_FROM_EMAIL`            | —                       | Verified Resend sender; required in production.                       |
-| `R2_ACCOUNT_ID`                | —                       | Cloudflare account ID; required in production.                        |
-| `R2_BUCKET_NAME`               | —                       | Private Cloudflare R2 bucket name; required in production.            |
-| `R2_ACCESS_KEY_ID`             | —                       | R2 API-token access key; required in production.                      |
-| `R2_SECRET_ACCESS_KEY`         | —                       | R2 API-token secret; required in production.                          |
-| `R2_PRESIGNED_URL_TTL_SECONDS` | `900`                   | Upload and download URL lifetime (60–3600 seconds).                   |
-| `ADMIN_EMAIL`                  | —                       | Optional idempotent bootstrap-admin email.                            |
-| `ADMIN_PASSWORD`               | —                       | Bootstrap-admin password (8+ characters).                             |
-| `ADMIN_NAME`                   | `Lumify Admin`          | Bootstrap-admin display name.                                         |
-| `DATABASE_URL_DOCKER`          | Compose database URL    | Overrides the API database URL used by Docker Compose.                |
-| `POSTGRES_PORT`                | `5432`                  | Host port exposed for PostgreSQL by Docker Compose.                   |
+| Variable                             | Default                 | Purpose                                                               |
+| ------------------------------------ | ----------------------- | --------------------------------------------------------------------- |
+| `NODE_ENV`                           | `development`           | Application environment: `development`, `test`, or `production`.      |
+| `HOST`                               | `0.0.0.0`               | Interface on which Fastify listens.                                   |
+| `PORT`                               | `3000`                  | HTTP port.                                                            |
+| `TRUST_PROXY`                        | `false`                 | Trust reverse-proxy headers; enable only behind the production proxy. |
+| `DATABASE_URL`                       | —                       | PostgreSQL connection URL. Required outside Docker Compose defaults.  |
+| `LOG_LEVEL`                          | `info`                  | Pino log level.                                                       |
+| `CORS_ORIGIN`                        | `http://localhost:5173` | Comma-separated allowed browser origins; `*` allows all origins.      |
+| `JWT_ACCESS_SECRET`                  | Development-only value  | At least 32 characters; required in production.                       |
+| `JWT_REFRESH_SECRET`                 | Development-only value  | At least 32 characters; required in production.                       |
+| `ACCESS_TOKEN_TTL`                   | `15m`                   | Access-token lifetime.                                                |
+| `REFRESH_TOKEN_TTL_DAYS`             | `30`                    | Rotated refresh-session lifetime.                                     |
+| `OTP_TTL_MINUTES`                    | `10`                    | Email-verification/reset OTP lifetime.                                |
+| `AUTH_REGISTER_IP_LIMIT`             | `10`                    | Registrations allowed per IP per configured window.                   |
+| `AUTH_REGISTER_IP_WINDOW_SECONDS`    | `900`                   | Registration IP limit window in seconds.                              |
+| `AUTH_REGISTER_EMAIL_LIMIT`          | `3`                     | Registrations allowed per email per configured window.                |
+| `AUTH_REGISTER_EMAIL_WINDOW_SECONDS` | `3600`                  | Registration email limit window in seconds.                           |
+| `AUTH_RESEND_IP_LIMIT`               | `10`                    | Verification resends allowed per IP per configured window.            |
+| `AUTH_RESEND_IP_WINDOW_SECONDS`      | `900`                   | Resend IP limit window in seconds.                                    |
+| `AUTH_RESEND_EMAIL_LIMIT`            | `3`                     | Verification resends allowed per email per configured window.         |
+| `AUTH_RESEND_EMAIL_WINDOW_SECONDS`   | `900`                   | Resend email limit window in seconds.                                 |
+| `AUTH_VERIFY_IP_LIMIT`               | `20`                    | OTP verification attempts allowed per IP per configured window.       |
+| `AUTH_VERIFY_IP_WINDOW_SECONDS`      | `900`                   | Verification IP limit window in seconds.                              |
+| `AUTH_VERIFY_EMAIL_LIMIT`            | `5`                     | OTP verification attempts allowed per email per configured window.    |
+| `AUTH_VERIFY_EMAIL_WINDOW_SECONDS`   | `600`                   | Verification email limit window in seconds.                           |
+| `EXPOSE_OTP_IN_RESPONSE`             | `false`                 | Return OTPs in API responses; use only for non-public staging.        |
+| `EMAIL_DELIVERY_ENABLED`             | `true`                  | Send OTPs through Resend; set `false` only for non-public staging.    |
+| `RESEND_API_KEY`                     | —                       | Resend credential; required in production.                            |
+| `RESEND_FROM_EMAIL`                  | —                       | Verified Resend sender; required in production.                       |
+| `R2_ACCOUNT_ID`                      | —                       | Cloudflare account ID; required in production.                        |
+| `R2_BUCKET_NAME`                     | —                       | Private Cloudflare R2 bucket name; required in production.            |
+| `R2_ACCESS_KEY_ID`                   | —                       | R2 API-token access key; required in production.                      |
+| `R2_SECRET_ACCESS_KEY`               | —                       | R2 API-token secret; required in production.                          |
+| `R2_PRESIGNED_URL_TTL_SECONDS`       | `900`                   | Upload and download URL lifetime (60–3600 seconds).                   |
+| `ADMIN_EMAIL`                        | —                       | Optional idempotent bootstrap-admin email.                            |
+| `ADMIN_PASSWORD`                     | —                       | Bootstrap-admin password (8+ characters).                             |
+| `ADMIN_NAME`                         | `Lumify Admin`          | Bootstrap-admin display name.                                         |
+| `DATABASE_URL_DOCKER`                | Compose database URL    | Overrides the API database URL used by Docker Compose.                |
+| `POSTGRES_PORT`                      | `5432`                  | Host port exposed for PostgreSQL by Docker Compose.                   |
 
 Never commit `.env`; use `.env.example` as the template.
 

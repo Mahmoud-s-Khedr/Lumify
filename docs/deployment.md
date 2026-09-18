@@ -6,9 +6,10 @@ external Resend/R2 credentials.
 
 ## 1. Prepare the host
 
-Install Docker Engine with the Compose plugin, Nginx, Certbot, and the Certbot Nginx integration.
-Allow inbound TCP ports 22, 80, and 443 only. PostgreSQL is intentionally not published by the
-production Compose stack, and the API is bound only to `127.0.0.1:3000` for host Nginx.
+Install Docker Engine with the Compose plugin, Nginx, Certbot, the Certbot Nginx integration, and
+`envsubst` (the `gettext-base` package on Debian/Ubuntu). Allow inbound TCP ports 22, 80, and 443
+only. PostgreSQL is intentionally not published by the production Compose stack, and the API is
+bound only to `127.0.0.1:3000` for host Nginx.
 
 Clone the repository into a directory owned by the deployment user. Create the production
 environment file and restrict its permissions:
@@ -38,7 +39,7 @@ means either the API process or its PostgreSQL connection is unavailable.
 ## 2. Configure DNS and HTTPS
 
 Point the API DNS record at the VPS. Replace every `api.example.com` occurrence in
-`deploy/nginx/lumify.bootstrap.conf` and `deploy/nginx/lumify.conf` with the real hostname.
+`deploy/nginx/lumify.bootstrap.conf` and `deploy/nginx/lumify.conf.template` with the real hostname.
 
 Install the HTTP bootstrap configuration first so Certbot can complete its challenge:
 
@@ -50,17 +51,21 @@ sudo systemctl reload nginx
 sudo certbot certonly --nginx -d api.example.com
 ```
 
-Then install the HTTPS configuration, verify it, and reload Nginx:
+Then render the HTTPS configuration using the Nginx rate-limit values in `.env.production`, install
+it, verify it, and reload Nginx:
 
 ```bash
-sudo cp deploy/nginx/lumify.conf /etc/nginx/sites-available/lumify
+./deploy/render-nginx-config.sh .env.production | sudo tee /etc/nginx/sites-available/lumify >/dev/null
 sudo nginx -t
 sudo systemctl reload nginx
 curl --fail https://api.example.com/ready
 ```
 
 The production template terminates TLS, redirects HTTP, forwards the trusted proxy headers,
-limits request bursts, and caps proxied request bodies. Uploaded assets do not pass through Nginx;
+limits request bursts, and caps proxied request bodies. `NGINX_RATE_LIMIT` accepts Nginx values
+such as `20r/s` or `1200r/m`; `NGINX_RATE_LIMIT_BURST` is the immediate per-IP burst allowance.
+The renderer sets Nginx's rate-limit response to `429`. After changing either value, render and
+reload Nginx again. Uploaded assets do not pass through Nginx;
 clients upload them directly to R2 with short-lived signed URLs.
 
 It forwards WebSocket upgrade headers and uses a one-hour read timeout for Socket.IO communities.

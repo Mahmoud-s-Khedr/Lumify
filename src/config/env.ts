@@ -18,6 +18,18 @@ const envSchema = z.object({
   ACCESS_TOKEN_TTL: z.string().default('15m'),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
   OTP_TTL_MINUTES: z.coerce.number().int().min(1).max(60).default(10),
+  AUTH_REGISTER_IP_LIMIT: z.coerce.number().int().min(1).max(10_000).default(10),
+  AUTH_REGISTER_IP_WINDOW_SECONDS: z.coerce.number().int().min(1).max(86_400).default(900),
+  AUTH_REGISTER_EMAIL_LIMIT: z.coerce.number().int().min(1).max(10_000).default(3),
+  AUTH_REGISTER_EMAIL_WINDOW_SECONDS: z.coerce.number().int().min(1).max(86_400).default(3_600),
+  AUTH_RESEND_IP_LIMIT: z.coerce.number().int().min(1).max(10_000).default(10),
+  AUTH_RESEND_IP_WINDOW_SECONDS: z.coerce.number().int().min(1).max(86_400).default(900),
+  AUTH_RESEND_EMAIL_LIMIT: z.coerce.number().int().min(1).max(10_000).default(3),
+  AUTH_RESEND_EMAIL_WINDOW_SECONDS: z.coerce.number().int().min(1).max(86_400).default(900),
+  AUTH_VERIFY_IP_LIMIT: z.coerce.number().int().min(1).max(10_000).default(20),
+  AUTH_VERIFY_IP_WINDOW_SECONDS: z.coerce.number().int().min(1).max(86_400).default(900),
+  AUTH_VERIFY_EMAIL_LIMIT: z.coerce.number().int().min(1).max(10_000).default(5),
+  AUTH_VERIFY_EMAIL_WINDOW_SECONDS: z.coerce.number().int().min(1).max(86_400).default(600),
   EXPOSE_OTP_IN_RESPONSE: z
     .enum(['true', 'false'])
     .default('false')

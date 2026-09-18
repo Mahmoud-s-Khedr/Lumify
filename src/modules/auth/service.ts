@@ -40,18 +40,42 @@ export function hashToken(value: string): string {
 }
 
 const registrationRateLimits = {
-  ip: { action: 'REGISTER_IP', limit: 10, windowSeconds: 15 * 60 },
-  email: { action: 'REGISTER_EMAIL', limit: 3, windowSeconds: 60 * 60 },
+  ip: {
+    action: 'REGISTER_IP',
+    limit: env.AUTH_REGISTER_IP_LIMIT,
+    windowSeconds: env.AUTH_REGISTER_IP_WINDOW_SECONDS,
+  },
+  email: {
+    action: 'REGISTER_EMAIL',
+    limit: env.AUTH_REGISTER_EMAIL_LIMIT,
+    windowSeconds: env.AUTH_REGISTER_EMAIL_WINDOW_SECONDS,
+  },
 } as const;
 
 const resendRateLimits = {
-  ip: { action: 'RESEND_IP', limit: 10, windowSeconds: 15 * 60 },
-  email: { action: 'RESEND_EMAIL', limit: 3, windowSeconds: 15 * 60 },
+  ip: {
+    action: 'RESEND_IP',
+    limit: env.AUTH_RESEND_IP_LIMIT,
+    windowSeconds: env.AUTH_RESEND_IP_WINDOW_SECONDS,
+  },
+  email: {
+    action: 'RESEND_EMAIL',
+    limit: env.AUTH_RESEND_EMAIL_LIMIT,
+    windowSeconds: env.AUTH_RESEND_EMAIL_WINDOW_SECONDS,
+  },
 } as const;
 
 const verificationRateLimits = {
-  ip: { action: 'VERIFY_IP', limit: 20, windowSeconds: 15 * 60 },
-  email: { action: 'VERIFY_EMAIL', limit: 5, windowSeconds: env.OTP_TTL_MINUTES * 60 },
+  ip: {
+    action: 'VERIFY_IP',
+    limit: env.AUTH_VERIFY_IP_LIMIT,
+    windowSeconds: env.AUTH_VERIFY_IP_WINDOW_SECONDS,
+  },
+  email: {
+    action: 'VERIFY_EMAIL',
+    limit: env.AUTH_VERIFY_EMAIL_LIMIT,
+    windowSeconds: env.AUTH_VERIFY_EMAIL_WINDOW_SECONDS,
+  },
 } as const;
 
 type RateLimit = { action: string; limit: number; windowSeconds: number };
