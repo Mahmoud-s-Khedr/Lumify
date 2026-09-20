@@ -160,4 +160,57 @@ describe('Phase 3 file and course journeys', () => {
     });
     expect(response.status).toBe(400);
   });
+
+  it('accepts a video uploaded as course media', async () => {
+    const admin = await prisma.user.create({
+      data: {
+        name: 'Admin',
+        email: 'admin@example.com',
+        passwordHash: await hashPassword(password),
+        emailVerified: true,
+        role: 'ADMIN',
+      },
+    });
+    const login = await api<{ accessToken: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: admin.email, password }),
+    });
+    const headers = { authorization: `Bearer ${login.body.accessToken}` };
+    const upload = await api<{ storageKey: string }>('/files/uploads', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        kind: 'COURSE_IMAGE',
+        originalName: 'course-intro.mp4',
+        mimeType: 'video/mp4',
+      }),
+    });
+    expect(upload.status).toBe(201);
+    const completed = await api<{ file: { id: string; mimeType: string | null } }>(
+      '/files/uploads/complete',
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          kind: 'COURSE_IMAGE',
+          storageKey: upload.body.storageKey,
+          originalName: 'course-intro.mp4',
+          mimeType: 'video/mp4',
+        }),
+      },
+    );
+    expect(completed.status).toBe(201);
+    expect(completed.body.file.mimeType).toBe('video/mp4');
+
+    const course = await api('/courses', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        title: 'Video Course',
+        price: 1,
+        imageFileIds: [completed.body.file.id],
+      }),
+    });
+    expect(course.status).toBe(201);
+  });
 });

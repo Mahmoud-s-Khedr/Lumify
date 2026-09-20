@@ -110,7 +110,7 @@ includes every enrollment state; use `status=CONFIRMED` for the active class ros
 
 | Method | Path | Access | Body / purpose |
 | --- | --- | --- | --- |
-| POST | `/files/uploads` | Authenticated for receipts, avatars, and community attachments; Admin for course images/materials | Create a signed upload URL. `COMMUNITY_ATTACHMENT` permits JPEG, PNG, GIF, WebP, PDF, TXT, DOC/DOCX, XLS/XLSX, and PPT/PPTX, up to 20 MB. |
+| POST | `/files/uploads` | Authenticated for receipts, avatars, and community attachments; Admin for course images/materials | Create a signed upload URL. `COURSE_IMAGE` permits JPEG, PNG, WebP, MP4, WebM, and MOV, up to 50 MB. `COMMUNITY_ATTACHMENT` permits JPEG, PNG, GIF, WebP, PDF, TXT, DOC/DOCX, XLS/XLSX, and PPT/PPTX, up to 20 MB. |
 | POST | `/files/uploads/complete` | Same as upload | Persist a completed upload. Community files use the private `community-attachments/` key prefix. |
 | GET | `/files/:id/download` | Public for images of active courses and attached profile avatars; otherwise authorized | Community attachments are available to their uploader/admin and currently confirmed community members while the message remains visible. |
 

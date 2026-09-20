@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
 export const imageMimeTypes = ['image/jpeg', 'image/png', 'image/webp'] as const;
+export const courseMediaMimeTypes = [
+  ...imageMimeTypes,
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+] as const;
 export const avatarMimeTypes = ['image/jpeg', 'image/png', 'image/gif'] as const;
 export const communityAttachmentMimeTypes = [
   'image/jpeg',
@@ -29,7 +35,7 @@ export const uploadSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('COURSE_IMAGE'),
     originalName: originalNameSchema,
-    mimeType: z.enum(imageMimeTypes),
+    mimeType: z.enum(courseMediaMimeTypes),
   }),
   z.object({
     kind: z.literal('ROUND_MATERIAL'),
@@ -57,7 +63,7 @@ export const completeSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('COURSE_IMAGE'),
     originalName: originalNameSchema,
-    mimeType: z.enum(imageMimeTypes),
+    mimeType: z.enum(courseMediaMimeTypes),
     storageKey: z.string().regex(/^course-images\/[0-9a-f-]{36}$/),
   }),
   z.object({

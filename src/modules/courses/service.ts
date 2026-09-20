@@ -2,7 +2,10 @@ import { type File, Prisma } from '@prisma/client';
 
 import { AppError } from '../../common/errors/app-error.js';
 import { prisma } from '../../infrastructure/database/prisma.js';
+import { courseMediaMimeTypes } from '../files/schemas.js';
 import type { CreateCourseInput, ListCoursesQuery, UpdateCourseInput } from './schemas.js';
+
+const courseMediaMimeTypeSet = new Set<string>(courseMediaMimeTypes);
 
 export const courseInclude = {
   images: { include: { file: true }, orderBy: { sortOrder: 'asc' as const } },
@@ -84,15 +87,10 @@ async function validateImageFiles(
       'Each image must be an uploaded file owned by the administrator.',
       'INVALID_COURSE_IMAGE',
     );
-  if (
-    files.some(
-      (file) =>
-        !file.mimeType || !['image/jpeg', 'image/png', 'image/webp'].includes(file.mimeType),
-    )
-  )
+  if (files.some((file) => !file.mimeType || !courseMediaMimeTypeSet.has(file.mimeType)))
     throw new AppError(
       400,
-      'Each course image must be a supported image file.',
+      'Each course image must be a supported image or video file.',
       'INVALID_COURSE_IMAGE',
     );
 }
