@@ -7,8 +7,11 @@ import { prisma } from '../../infrastructure/database/prisma.js';
 import type {
   CreateMaterialInput,
   CreateRoundInput,
+  OccurrenceInput,
+  ReplaceScheduleModeInput,
   ScheduleInput,
   UpdateMaterialInput,
+  UpdateOccurrenceInput,
   UpdateRoundInput,
   UpdateScheduleInput,
 } from './schemas.js';
@@ -16,6 +19,7 @@ import type {
 export const roundInclude = {
   course: { select: { id: true, title: true, archived: true } },
   schedules: { orderBy: { weekday: 'asc' as const } },
+  occurrences: { orderBy: { startAt: 'asc' as const } },
   _count: { select: { bookings: { where: { status: 'CONFIRMED' } } } },
 } satisfies Prisma.CourseRoundInclude;
 
@@ -28,6 +32,111 @@ function inputDate(value: string): Date {
 
 function inputTime(value: string): Date {
   return new Date(`1970-01-01T${value}:00.000Z`);
+}
+
+function timeOnly(value: Date): string {
+  return value.toISOString().slice(11, 16);
+}
+
+function requireDistinctScheduleTimes(startTime: Date, endTime: Date): void {
+  if (timeOnly(startTime) === timeOnly(endTime))
+    throw new AppError(
+      400,
+      'The end time must differ from the start time.',
+      'INVALID_SCHEDULE_TIME_RANGE',
+    );
+}
+
+const weekdayOffsets = new Map(
+  ['SATURDAY', 'SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'].map(
+    (weekday, index) => [weekday, index],
+  ),
+);
+const minutesInDay = 24 * 60;
+const minutesInWeek = 7 * minutesInDay;
+
+type WeeklySchedulePeriod = { weekday: string; startTime: Date; endTime: Date };
+
+function weeklyInterval(schedule: WeeklySchedulePeriod) {
+  const weekday = weekdayOffsets.get(schedule.weekday);
+  if (weekday === undefined) throw new AppError(400, 'Invalid weekday.', 'INVALID_WEEKDAY');
+  const [startHour, startMinute] = timeOnly(schedule.startTime).split(':').map(Number);
+  const [endHour, endMinute] = timeOnly(schedule.endTime).split(':').map(Number);
+  const start = weekday * minutesInDay + startHour! * 60 + startMinute!;
+  let end = weekday * minutesInDay + endHour! * 60 + endMinute!;
+  if (end <= start) end += minutesInDay;
+  return { start, end };
+}
+
+function intervalsOverlap(
+  left: { start: number; end: number },
+  right: { start: number; end: number },
+): boolean {
+  return left.start < right.end && right.start < left.end;
+}
+
+function requireNoWeeklyOverlap(schedules: WeeklySchedulePeriod[]): void {
+  const intervals = schedules.map(weeklyInterval);
+  for (let leftIndex = 0; leftIndex < intervals.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < intervals.length; rightIndex += 1) {
+      const left = intervals[leftIndex]!;
+      const right = intervals[rightIndex]!;
+      if (
+        [-minutesInWeek, 0, minutesInWeek].some((shift) =>
+          intervalsOverlap(left, { start: right.start + shift, end: right.end + shift }),
+        )
+      )
+        throw new AppError(
+          409,
+          'Weekly schedule entries cannot overlap.',
+          'OVERLAPPING_SCHEDULE',
+        );
+    }
+  }
+}
+
+type OccurrencePeriod = { startAt: Date; endAt: Date };
+
+function requireValidOccurrences(
+  occurrences: OccurrencePeriod[],
+  roundStartDate: Date,
+  roundEndDate: Date,
+): void {
+  const roundStart = roundStartDate.toISOString().slice(0, 10);
+  const roundEnd = roundEndDate.toISOString().slice(0, 10);
+  const dayAfterRoundEnd = new Date(`${roundEnd}T00:00:00.000Z`);
+  dayAfterRoundEnd.setUTCDate(dayAfterRoundEnd.getUTCDate() + 1);
+  const overnightEnd = dayAfterRoundEnd.toISOString().slice(0, 10);
+  for (const occurrence of occurrences) {
+    if (occurrence.startAt >= occurrence.endAt)
+      throw new AppError(
+        400,
+        'The end timestamp must be after the start timestamp.',
+        'INVALID_OCCURRENCE_TIME_RANGE',
+      );
+    const startDay = occurrence.startAt.toISOString().slice(0, 10);
+    if (startDay < roundStart || startDay > roundEnd)
+      throw new AppError(
+        400,
+        'An occurrence start timestamp must fall within the round dates.',
+        'OCCURRENCE_OUTSIDE_ROUND_DATES',
+      );
+    const endDay = occurrence.endAt.toISOString().slice(0, 10);
+    if (endDay > roundEnd && !(startDay === roundEnd && endDay === overnightEnd))
+      throw new AppError(
+        400,
+        'An occurrence can end after the round only when it runs overnight from the final date.',
+        'OCCURRENCE_OUTSIDE_ROUND_DATES',
+      );
+  }
+  for (let leftIndex = 0; leftIndex < occurrences.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < occurrences.length; rightIndex += 1) {
+      const left = occurrences[leftIndex]!;
+      const right = occurrences[rightIndex]!;
+      if (left.startAt < right.endAt && right.startAt < left.endAt)
+        throw new AppError(409, 'Custom occurrences cannot overlap.', 'OVERLAPPING_OCCURRENCE');
+    }
+  }
 }
 
 async function lockRound(tx: Prisma.TransactionClient, roundId: bigint): Promise<void> {
@@ -45,7 +154,7 @@ async function requireRoundWithoutBookings(
   if (bookings > 0)
     throw new AppError(
       409,
-      'A round with bookings cannot have its dates or schedule changed or be deleted.',
+      'A round with bookings cannot have its dates changed or be deleted.',
       'ROUND_HAS_BOOKINGS',
     );
 }
@@ -53,6 +162,26 @@ async function requireRoundWithoutBookings(
 async function lockEditableRound(tx: Prisma.TransactionClient, roundId: bigint): Promise<void> {
   await lockRound(tx, roundId);
   await requireRoundWithoutBookings(tx, roundId);
+}
+
+async function requireScheduleMode(
+  tx: Prisma.TransactionClient,
+  roundId: bigint,
+  scheduleMode: 'WEEKLY' | 'CUSTOM',
+) {
+  const round = await tx.courseRound.findUniqueOrThrow({ where: { id: roundId } });
+  if (round.scheduleMode !== scheduleMode)
+    throw new AppError(
+      409,
+      `This round uses ${round.scheduleMode.toLowerCase()} scheduling.`,
+      'SCHEDULE_MODE_MISMATCH',
+    );
+  return round;
+}
+
+async function refreshedRound(tx: Prisma.TransactionClient, roundId: bigint): Promise<RoundWithDetails> {
+  await tx.courseRound.update({ where: { id: roundId }, data: {} });
+  return tx.courseRound.findUniqueOrThrow({ where: { id: roundId }, include: roundInclude });
 }
 
 async function validateMaterialFile(fileId: bigint, uploaderId: bigint): Promise<File> {
@@ -93,18 +222,40 @@ export async function createRound(
 ): Promise<RoundWithDetails> {
   const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true } });
   if (!course) throw new AppError(404, 'Course was not found.', 'COURSE_NOT_FOUND');
+  const startDate = inputDate(input.startDate);
+  const endDate = inputDate(input.endDate);
+  if (input.scheduleMode !== 'CUSTOM') {
+    const schedules = (input.schedules ?? []).map((schedule) => ({
+      weekday: schedule.weekday,
+      startTime: inputTime(schedule.startTime),
+      endTime: inputTime(schedule.endTime),
+    }));
+    requireNoWeeklyOverlap(schedules);
+    return prisma.courseRound.create({
+      data: {
+        courseId: course.id,
+        startDate,
+        endDate,
+        capacity: input.capacity,
+        scheduleMode: 'WEEKLY',
+        schedules: { create: schedules },
+      },
+      include: roundInclude,
+    });
+  }
+  const occurrences = (input.occurrences ?? []).map((occurrence) => ({
+    startAt: new Date(occurrence.startAt),
+    endAt: new Date(occurrence.endAt),
+  }));
+  requireValidOccurrences(occurrences, startDate, endDate);
   return prisma.courseRound.create({
     data: {
       courseId: course.id,
-      startDate: inputDate(input.startDate),
-      endDate: inputDate(input.endDate),
+      startDate,
+      endDate,
       capacity: input.capacity,
-      schedules: {
-        create: (input.schedules ?? []).map((schedule) => ({
-          weekday: schedule.weekday,
-          startTime: inputTime(schedule.startTime),
-        })),
-      },
+      scheduleMode: 'CUSTOM',
+      occurrences: { create: occurrences },
     },
     include: roundInclude,
   });
@@ -127,6 +278,13 @@ export async function updateRound(
         'The end date must be on or after the start date.',
         'INVALID_ROUND_DATES',
       );
+    if (
+      (input.startDate !== undefined || input.endDate !== undefined) &&
+      current.scheduleMode === 'CUSTOM'
+    ) {
+      const occurrences = await tx.roundOccurrence.findMany({ where: { roundId } });
+      requireValidOccurrences(occurrences, startDate, endDate);
+    }
     return tx.courseRound.update({
       where: { id: roundId },
       data: { startDate, endDate, capacity: input.capacity },
@@ -145,6 +303,7 @@ export async function deleteRound(roundId: bigint): Promise<bigint[]> {
     await tx.session.deleteMany({ where: { roundId } });
     await tx.roundMaterial.deleteMany({ where: { roundId } });
     await tx.roundSchedule.deleteMany({ where: { roundId } });
+    await tx.roundOccurrence.deleteMany({ where: { roundId } });
     await tx.courseRound.delete({ where: { id: roundId } });
     return materials.flatMap((material) => (material.fileId === null ? [] : [material.fileId]));
   });
@@ -155,11 +314,22 @@ export async function createSchedule(
   input: ScheduleInput,
 ): Promise<RoundWithDetails> {
   return prisma.$transaction(async (tx) => {
-    await lockEditableRound(tx, roundId);
+    await lockRound(tx, roundId);
+    await requireScheduleMode(tx, roundId, 'WEEKLY');
+    const schedules = await tx.roundSchedule.findMany({ where: { roundId } });
+    const candidate = {
+      weekday: input.weekday,
+      startTime: inputTime(input.startTime),
+      endTime: inputTime(input.endTime),
+    };
+    requireNoWeeklyOverlap([...schedules, candidate]);
     await tx.roundSchedule.create({
-      data: { roundId, weekday: input.weekday, startTime: inputTime(input.startTime) },
+      data: {
+        roundId,
+        ...candidate,
+      },
     });
-    return tx.courseRound.findUniqueOrThrow({ where: { id: roundId }, include: roundInclude });
+    return refreshedRound(tx, roundId);
   });
 }
 
@@ -169,26 +339,119 @@ export async function updateSchedule(
   input: UpdateScheduleInput,
 ): Promise<RoundWithDetails> {
   return prisma.$transaction(async (tx) => {
-    await lockEditableRound(tx, roundId);
+    await lockRound(tx, roundId);
+    await requireScheduleMode(tx, roundId, 'WEEKLY');
     const schedule = await tx.roundSchedule.findFirst({ where: { id: scheduleId, roundId } });
     if (!schedule) throw new AppError(404, 'Schedule entry was not found.', 'SCHEDULE_NOT_FOUND');
+    const startTime = input.startTime ? inputTime(input.startTime) : schedule.startTime;
+    const endTime = input.endTime ? inputTime(input.endTime) : schedule.endTime;
+    requireDistinctScheduleTimes(startTime, endTime);
+    const weekday = input.weekday ?? schedule.weekday;
+    const otherSchedules = await tx.roundSchedule.findMany({ where: { roundId, id: { not: scheduleId } } });
+    requireNoWeeklyOverlap([...otherSchedules, { weekday, startTime, endTime }]);
     await tx.roundSchedule.update({
       where: { id: scheduleId },
       data: {
-        weekday: input.weekday,
-        startTime: input.startTime ? inputTime(input.startTime) : undefined,
+        weekday,
+        startTime,
+        endTime,
       },
     });
-    return tx.courseRound.findUniqueOrThrow({ where: { id: roundId }, include: roundInclude });
+    return refreshedRound(tx, roundId);
   });
 }
 
 export async function deleteSchedule(roundId: bigint, scheduleId: bigint): Promise<void> {
   await prisma.$transaction(async (tx) => {
-    await lockEditableRound(tx, roundId);
+    await lockRound(tx, roundId);
+    await requireScheduleMode(tx, roundId, 'WEEKLY');
     const deleted = await tx.roundSchedule.deleteMany({ where: { id: scheduleId, roundId } });
     if (deleted.count === 0)
       throw new AppError(404, 'Schedule entry was not found.', 'SCHEDULE_NOT_FOUND');
+  });
+}
+
+export async function createOccurrence(
+  roundId: bigint,
+  input: OccurrenceInput,
+): Promise<RoundWithDetails> {
+  return prisma.$transaction(async (tx) => {
+    await lockRound(tx, roundId);
+    const round = await requireScheduleMode(tx, roundId, 'CUSTOM');
+    const candidate = { startAt: new Date(input.startAt), endAt: new Date(input.endAt) };
+    const occurrences = await tx.roundOccurrence.findMany({ where: { roundId } });
+    requireValidOccurrences([...occurrences, candidate], round.startDate, round.endDate);
+    await tx.roundOccurrence.create({ data: { roundId, ...candidate } });
+    return refreshedRound(tx, roundId);
+  });
+}
+
+export async function updateOccurrence(
+  roundId: bigint,
+  occurrenceId: bigint,
+  input: UpdateOccurrenceInput,
+): Promise<RoundWithDetails> {
+  return prisma.$transaction(async (tx) => {
+    await lockRound(tx, roundId);
+    const round = await requireScheduleMode(tx, roundId, 'CUSTOM');
+    const occurrence = await tx.roundOccurrence.findFirst({ where: { id: occurrenceId, roundId } });
+    if (!occurrence) throw new AppError(404, 'Occurrence was not found.', 'OCCURRENCE_NOT_FOUND');
+    const candidate = {
+      startAt: input.startAt ? new Date(input.startAt) : occurrence.startAt,
+      endAt: input.endAt ? new Date(input.endAt) : occurrence.endAt,
+    };
+    const others = await tx.roundOccurrence.findMany({ where: { roundId, id: { not: occurrenceId } } });
+    requireValidOccurrences([...others, candidate], round.startDate, round.endDate);
+    await tx.roundOccurrence.update({ where: { id: occurrenceId }, data: candidate });
+    return refreshedRound(tx, roundId);
+  });
+}
+
+export async function deleteOccurrence(roundId: bigint, occurrenceId: bigint): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await lockRound(tx, roundId);
+    await requireScheduleMode(tx, roundId, 'CUSTOM');
+    const deleted = await tx.roundOccurrence.deleteMany({ where: { id: occurrenceId, roundId } });
+    if (deleted.count === 0)
+      throw new AppError(404, 'Occurrence was not found.', 'OCCURRENCE_NOT_FOUND');
+    await tx.courseRound.update({ where: { id: roundId }, data: {} });
+  });
+}
+
+export async function replaceScheduleMode(
+  roundId: bigint,
+  input: ReplaceScheduleModeInput,
+): Promise<RoundWithDetails> {
+  return prisma.$transaction(async (tx) => {
+    await lockRound(tx, roundId);
+    const round = await tx.courseRound.findUniqueOrThrow({ where: { id: roundId } });
+    if (input.scheduleMode === 'WEEKLY') {
+      const schedules = input.schedules.map((schedule) => ({
+        weekday: schedule.weekday,
+        startTime: inputTime(schedule.startTime),
+        endTime: inputTime(schedule.endTime),
+      }));
+      requireNoWeeklyOverlap(schedules);
+      await tx.roundOccurrence.deleteMany({ where: { roundId } });
+      await tx.roundSchedule.deleteMany({ where: { roundId } });
+      await tx.courseRound.update({
+        where: { id: roundId },
+        data: { scheduleMode: 'WEEKLY', schedules: { create: schedules } },
+      });
+    } else {
+      const occurrences = input.occurrences.map((occurrence) => ({
+        startAt: new Date(occurrence.startAt),
+        endAt: new Date(occurrence.endAt),
+      }));
+      requireValidOccurrences(occurrences, round.startDate, round.endDate);
+      await tx.roundSchedule.deleteMany({ where: { roundId } });
+      await tx.roundOccurrence.deleteMany({ where: { roundId } });
+      await tx.courseRound.update({
+        where: { id: roundId },
+        data: { scheduleMode: 'CUSTOM', occurrences: { create: occurrences } },
+      });
+    }
+    return tx.courseRound.findUniqueOrThrow({ where: { id: roundId }, include: roundInclude });
   });
 }
 

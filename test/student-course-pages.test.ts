@@ -207,7 +207,13 @@ describe('student course pages', () => {
         liveJoinUrl: 'https://meet.example.com/private',
         whatsappUrl: 'https://chat.whatsapp.com/private',
         joiningInstructions: 'Private instructions',
-        schedules: { create: { weekday: 'MONDAY', startTime: new Date('1970-01-01T18:30:00Z') } },
+        schedules: {
+          create: {
+            weekday: 'MONDAY',
+            startTime: new Date('1970-01-01T18:30:00Z'),
+            endTime: new Date('1970-01-01T20:00:00Z'),
+          },
+        },
       },
     });
     await prisma.booking.create({
@@ -256,7 +262,7 @@ describe('student course pages', () => {
       round: {
         id: string;
         state: string;
-        schedules: Array<{ weekday: string; startTime: string }>;
+        schedules: Array<{ weekday: string; startTime: string; endTime: string }>;
       };
       sessions: Array<{ id: string; title: string; recordingUrl: string | null }>;
       materials: Array<{
@@ -289,7 +295,7 @@ describe('student course pages', () => {
       ],
     });
     expect(response.body.round.schedules).toMatchObject([
-      { weekday: 'MONDAY', startTime: '18:30' },
+      { weekday: 'MONDAY', startTime: '18:30', endTime: '20:00' },
     ]);
     expect(JSON.stringify(response.body)).not.toContain('meet.example.com');
     expect(JSON.stringify(response.body)).not.toContain('whatsapp.com');

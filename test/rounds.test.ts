@@ -17,6 +17,7 @@ describe('Phase 4 round, schedule, and material journeys', () => {
     await prisma.session.deleteMany();
     await prisma.roundMaterial.deleteMany();
     await prisma.roundSchedule.deleteMany();
+    await prisma.roundOccurrence.deleteMany();
     await prisma.courseRound.deleteMany();
     await prisma.courseImage.deleteMany();
     await prisma.course.deleteMany();
@@ -100,7 +101,13 @@ describe('Phase 4 round, schedule, and material journeys', () => {
       round: {
         id: string;
         capacity: number;
-        schedules: Array<{ id: string; weekday: string; startTime: string }>;
+        schedules: Array<{
+          id: string;
+          weekday: string;
+          startTime: string;
+          endTime: string;
+          endsNextDay: boolean;
+        }>;
       };
     }>(`/courses/${course.id.toString()}/rounds`, {
       method: 'POST',
@@ -110,24 +117,29 @@ describe('Phase 4 round, schedule, and material journeys', () => {
         endDate: '2026-10-01',
         capacity: 40,
         schedules: [
-          { weekday: 'SATURDAY', startTime: '14:00' },
-          { weekday: 'MONDAY', startTime: '16:00' },
-          { weekday: 'THURSDAY', startTime: '20:30' },
+          { weekday: 'SATURDAY', startTime: '14:00', endTime: '17:00' },
+          { weekday: 'MONDAY', startTime: '16:00', endTime: '16:30' },
+          { weekday: 'THURSDAY', startTime: '20:30', endTime: '00:00' },
         ],
       }),
     });
     expect(created.status).toBe(201);
     expect(
-      created.body.round.schedules.map(({ weekday, startTime }) => ({ weekday, startTime })),
+      created.body.round.schedules.map(({ weekday, startTime, endTime, endsNextDay }) => ({
+        weekday,
+        startTime,
+        endTime,
+        endsNextDay,
+      })),
     ).toEqual([
-      { weekday: 'SATURDAY', startTime: '14:00' },
-      { weekday: 'MONDAY', startTime: '16:00' },
-      { weekday: 'THURSDAY', startTime: '20:30' },
+      { weekday: 'SATURDAY', startTime: '14:00', endTime: '17:00', endsNextDay: false },
+      { weekday: 'MONDAY', startTime: '16:00', endTime: '16:30', endsNextDay: false },
+      { weekday: 'THURSDAY', startTime: '20:30', endTime: '00:00', endsNextDay: true },
     ]);
 
     const saturday = created.body.round.schedules[0]!;
     const modified = await api<{
-      round: { schedules: Array<{ weekday: string; startTime: string }> };
+      round: { schedules: Array<{ weekday: string; startTime: string; endTime: string }> };
     }>(`/rounds/${created.body.round.id}/schedules/${saturday.id}`, {
       method: 'PATCH',
       headers: adminHeaders,
@@ -137,6 +149,7 @@ describe('Phase 4 round, schedule, and material journeys', () => {
     expect(modified.body.round.schedules[0]).toMatchObject({
       weekday: 'SATURDAY',
       startTime: '15:30',
+      endTime: '17:00',
     });
 
     const capacity = await api<{ round: { capacity: number } }>(
@@ -174,7 +187,7 @@ describe('Phase 4 round, schedule, and material journeys', () => {
           startDate: '2026-09-01',
           endDate: '2026-10-01',
           capacity: 40,
-          schedules: [{ weekday: 'SATURDAY', startTime: '14:00' }],
+          schedules: [{ weekday: 'SATURDAY', startTime: '14:00', endTime: '17:00' }],
         }),
       },
     );
@@ -247,12 +260,12 @@ describe('Phase 4 round, schedule, and material journeys', () => {
     });
     expect(blockedDateUpdate.status).toBe(409);
     expect(blockedDateUpdate.body).toMatchObject({ error: 'ROUND_HAS_BOOKINGS' });
-    const blockedScheduleUpdate = await api(`/rounds/${roundId}/schedules`, {
+    const scheduleUpdate = await api(`/rounds/${roundId}/schedules`, {
       method: 'POST',
       headers: adminHeaders,
-      body: JSON.stringify({ weekday: 'TUESDAY', startTime: '18:00' }),
+      body: JSON.stringify({ weekday: 'TUESDAY', startTime: '18:00', endTime: '19:00' }),
     });
-    expect(blockedScheduleUpdate.status).toBe(409);
+    expect(scheduleUpdate.status).toBe(201);
     const blockedDelete = await api(`/rounds/${roundId}`, {
       method: 'DELETE',
       headers: adminHeaders,
@@ -303,7 +316,7 @@ describe('Phase 4 round, schedule, and material journeys', () => {
     expect(cancelledAccess.status).toBe(403);
   });
 
-  it('deletes an empty round and rejects invalid or duplicate schedules', async () => {
+  it('deletes an empty round and rejects invalid or overlapping schedules', async () => {
     const { course, adminHeaders } = await fixture();
     const invalidDates = await api(`/courses/${course.id.toString()}/rounds`, {
       method: 'POST',
@@ -311,7 +324,18 @@ describe('Phase 4 round, schedule, and material journeys', () => {
       body: JSON.stringify({ startDate: '2026-10-02', endDate: '2026-10-01', capacity: 10 }),
     });
     expect(invalidDates.status).toBe(400);
-    const duplicateSchedule = await api(`/courses/${course.id.toString()}/rounds`, {
+    const zeroLengthSchedule = await api(`/courses/${course.id.toString()}/rounds`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({
+        startDate: '2026-09-01',
+        endDate: '2026-10-01',
+        capacity: 10,
+        schedules: [{ weekday: 'MONDAY', startTime: '10:00', endTime: '10:00' }],
+      }),
+    });
+    expect(zeroLengthSchedule.status).toBe(400);
+    const adjacentSchedules = await api(`/courses/${course.id.toString()}/rounds`, {
       method: 'POST',
       headers: adminHeaders,
       body: JSON.stringify({
@@ -319,12 +343,26 @@ describe('Phase 4 round, schedule, and material journeys', () => {
         endDate: '2026-10-01',
         capacity: 10,
         schedules: [
-          { weekday: 'MONDAY', startTime: '10:00' },
-          { weekday: 'MONDAY', startTime: '12:00' },
+          { weekday: 'MONDAY', startTime: '10:00', endTime: '11:00' },
+          { weekday: 'MONDAY', startTime: '12:00', endTime: '13:00' },
         ],
       }),
     });
-    expect(duplicateSchedule.status).toBe(400);
+    expect(adjacentSchedules.status).toBe(201);
+    const overlappingSchedule = await api(`/courses/${course.id.toString()}/rounds`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({
+        startDate: '2026-09-01',
+        endDate: '2026-10-01',
+        capacity: 10,
+        schedules: [
+          { weekday: 'MONDAY', startTime: '10:00', endTime: '11:00' },
+          { weekday: 'MONDAY', startTime: '10:30', endTime: '12:00' },
+        ],
+      }),
+    });
+    expect(overlappingSchedule.status).toBe(409);
 
     const created = await api<{ round: { id: string } }>(
       `/courses/${course.id.toString()}/rounds`,
@@ -345,5 +383,116 @@ describe('Phase 4 round, schedule, and material journeys', () => {
     expect(deleted.status).toBe(204);
     const missing = await api(`/rounds/${created.body.round.id}`);
     expect(missing.status).toBe(404);
+  });
+
+  it('manages custom UTC occurrences and atomically switches timetables after booking', async () => {
+    const { course, student, adminHeaders } = await fixture();
+    const created = await api<{
+      round: {
+        id: string;
+        scheduleMode: string;
+        schedules: unknown[];
+        occurrences: Array<{ id: string; startAt: string; endAt: string }>;
+      };
+    }>(`/courses/${course.id.toString()}/rounds`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({
+        startDate: '2027-10-01',
+        endDate: '2027-10-02',
+        capacity: 10,
+        scheduleMode: 'CUSTOM',
+        occurrences: [{ startAt: '2027-10-02T22:00:00Z', endAt: '2027-10-03T00:00:00Z' }],
+      }),
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.round).toMatchObject({
+      scheduleMode: 'CUSTOM',
+      schedules: [],
+      occurrences: [{ startAt: '2027-10-02T22:00:00.000Z', endAt: '2027-10-03T00:00:00.000Z' }],
+    });
+
+    const occurrence = created.body.round.occurrences[0]!;
+    const overlap = await api(`/rounds/${created.body.round.id}/occurrences`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({ startAt: '2027-10-02T23:00:00Z', endAt: '2027-10-03T01:00:00Z' }),
+    });
+    expect(overlap.status).toBe(409);
+    const nonUtc = await api(`/rounds/${created.body.round.id}/occurrences`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({ startAt: '2027-10-02T10:00:00+02:00', endAt: '2027-10-02T11:00:00+02:00' }),
+    });
+    expect(nonUtc.status).toBe(400);
+    const outsideRound = await api(`/rounds/${created.body.round.id}/occurrences`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({ startAt: '2027-10-03T10:00:00Z', endAt: '2027-10-03T11:00:00Z' }),
+    });
+    expect(outsideRound.status).toBe(400);
+    const edited = await api<{ round: { occurrences: Array<{ startAt: string }> } }>(
+      `/rounds/${created.body.round.id}/occurrences/${occurrence.id}`,
+      {
+        method: 'PATCH',
+        headers: adminHeaders,
+        body: JSON.stringify({ startAt: '2027-10-02T21:30:00Z' }),
+      },
+    );
+    expect(edited.status).toBe(200);
+    expect(edited.body.round.occurrences[0]?.startAt).toBe('2027-10-02T21:30:00.000Z');
+    const extra = await api<{ round: { occurrences: Array<{ id: string; startAt: string }> } }>(
+      `/rounds/${created.body.round.id}/occurrences`,
+      {
+        method: 'POST',
+        headers: adminHeaders,
+        body: JSON.stringify({ startAt: '2027-10-01T10:00:00Z', endAt: '2027-10-01T11:00:00Z' }),
+      },
+    );
+    expect(extra.status).toBe(201);
+    const extraOccurrence = extra.body.round.occurrences.find(
+      (item) => item.startAt === '2027-10-01T10:00:00.000Z',
+    );
+    const deletedOccurrence = await api(
+      `/rounds/${created.body.round.id}/occurrences/${extraOccurrence?.id}`,
+      { method: 'DELETE', headers: adminHeaders },
+    );
+    expect(deletedOccurrence.status).toBe(204);
+
+    await prisma.booking.create({
+      data: { roundId: BigInt(created.body.round.id), studentId: student.id, price: 1500 },
+    });
+    const switched = await api<{
+      round: { scheduleMode: string; schedules: Array<{ weekday: string }>; occurrences: unknown[] };
+    }>(`/rounds/${created.body.round.id}/schedule-mode`, {
+      method: 'PATCH',
+      headers: adminHeaders,
+      body: JSON.stringify({
+        scheduleMode: 'WEEKLY',
+        schedules: [
+          { weekday: 'THURSDAY', startTime: '20:30', endTime: '00:00' },
+          { weekday: 'FRIDAY', startTime: '00:00', endTime: '01:00' },
+        ],
+      }),
+    });
+    expect(switched.status).toBe(200);
+    expect(switched.body.round).toMatchObject({
+      scheduleMode: 'WEEKLY',
+      occurrences: [],
+      schedules: [{ weekday: 'THURSDAY' }, { weekday: 'FRIDAY' }],
+    });
+
+    const rejectedOverlap = await api(`/rounds/${created.body.round.id}/schedules`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({ weekday: 'FRIDAY', startTime: '00:30', endTime: '02:00' }),
+    });
+    expect(rejectedOverlap.status).toBe(409);
+    const adjacent = await api(`/rounds/${created.body.round.id}/schedules`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({ weekday: 'FRIDAY', startTime: '01:00', endTime: '02:00' }),
+    });
+    expect(adjacent.status).toBe(201);
   });
 });

@@ -10,11 +10,23 @@ function srsBookingState(status: BookingWithDetails['status']) {
   return status;
 }
 
-function publicSchedule(schedule: { id: bigint; weekday: string; startTime: Date }) {
+function publicSchedule(schedule: { id: bigint; weekday: string; startTime: Date; endTime: Date }) {
+  const startTime = schedule.startTime.toISOString().slice(11, 16);
+  const endTime = schedule.endTime.toISOString().slice(11, 16);
   return {
     id: schedule.id.toString(),
     weekday: schedule.weekday,
-    startTime: schedule.startTime.toISOString().slice(11, 16),
+    startTime,
+    endTime,
+    endsNextDay: endTime < startTime,
+  };
+}
+
+function publicOccurrence(occurrence: { id: bigint; startAt: Date; endAt: Date }) {
+  return {
+    id: occurrence.id.toString(),
+    startAt: occurrence.startAt.toISOString(),
+    endAt: occurrence.endAt.toISOString(),
   };
 }
 
@@ -47,7 +59,15 @@ export function publicBooking(booking: BookingWithDetails, confirmedBooked: numb
       capacity: booking.round.capacity,
       confirmedBooked,
       emptySeats,
-      schedules: booking.round.schedules.map(publicSchedule),
+      scheduleMode: booking.round.scheduleMode,
+      schedules:
+        booking.round.scheduleMode === 'WEEKLY'
+          ? booking.round.schedules.map(publicSchedule)
+          : [],
+      occurrences:
+        booking.round.scheduleMode === 'CUSTOM'
+          ? booking.round.occurrences.map(publicOccurrence)
+          : [],
     },
     price: booking.price.toFixed(2),
     status: booking.status,

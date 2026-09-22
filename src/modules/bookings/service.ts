@@ -18,6 +18,7 @@ export const bookingInclude = {
     include: {
       course: { select: { id: true, title: true } },
       schedules: { orderBy: { weekday: 'asc' as const } },
+      occurrences: { orderBy: { startAt: 'asc' as const } },
     },
   },
 } satisfies Prisma.BookingInclude;

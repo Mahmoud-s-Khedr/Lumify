@@ -72,8 +72,9 @@ access. Administrators receive `403`.
 the session is in the future; `NONE` means no session has one.
 
 `GET /student/rounds/:id` returns `{ course, round, sessions, materials }`. `course` contains
-`id`, `title`, and `description`; `round` contains `id`, dates, calculated `state`, and weekly
-`schedules`; sessions are chronological and expose only `id`, `title`, `sessionDate`, and
+`id`, `title`, and `description`; `round` contains `id`, dates, calculated `state`,
+`scheduleMode`, `schedules`, and `occurrences` (the inactive timetable collection is empty);
+sessions are chronological and expose only `id`, `title`, `sessionDate`, and
 `recordingUrl`. Materials use the existing material shape (`id`, `title`, `kind`, `file`,
 `externalUrl`, `createdAt`), including file metadata and its protected download URL. This payload
 never includes live-join, WhatsApp, or joining-instruction values. Use `GET /rounds/:id/join`
@@ -124,20 +125,24 @@ includes every enrollment state; use `status=CONFIRMED` for the active class ros
 | PATCH | `/courses/:id` | Admin | Update one or more create fields, plus `archived`. |
 | DELETE | `/courses/:id` | Admin | Delete a course with no rounds or retained community history. Courses with rounds or community history must be archived instead. |
 
-## Rounds and schedules
+## Rounds and timetables
 
-`weekday` is one of `SATURDAY`, `SUNDAY`, `MONDAY`, `TUESDAY`, `WEDNESDAY`, `THURSDAY`, or `FRIDAY`; `startTime` uses `HH:MM`, and dates use `YYYY-MM-DD`.
+Rounds have a `scheduleMode`: `WEEKLY` (the default for existing and newly created legacy-style rounds) or `CUSTOM`. Weekly times are UTC: `weekday` is one of `SATURDAY`, `SUNDAY`, `MONDAY`, `TUESDAY`, `WEDNESDAY`, `THURSDAY`, or `FRIDAY`, and `startTime`/`endTime` use `HH:MM`. When `endTime` is earlier than `startTime`, the lesson ends on the following UTC day; responses return `endsNextDay`. Custom `startAt` and `endAt` values must be UTC ISO timestamps ending in `Z`; their start must be within the round's dates, although an overnight end can extend beyond its final date. Both timetable kinds reject overlaps but allow back-to-back entries. A round response always contains `scheduleMode`, `schedules`, and `occurrences`; the inactive collection is empty. Timetable entries never create or modify delivery sessions or recordings.
 
 | Method | Path | Access | Body / purpose |
 | --- | --- | --- | --- |
 | GET | `/courses/:courseId/rounds` | Public for active courses; Admin for archived | List only upcoming, non-full rounds. Each round includes `confirmedBooked`, `emptySeats`, and `availability` (`AVAILABLE` or `FULL`). Admins may use `includeUnavailable=true` to list every round. |
-| GET | `/rounds/:id` | Public for active courses; Admin for archived | Get a round and its weekly schedule, capacity counts, and availability. |
-| POST | `/courses/:courseId/rounds` | Admin | Create `{ startDate, endDate, capacity, schedules? }`; each schedule is `{ weekday, startTime }`. |
+| GET | `/rounds/:id` | Public for active courses; Admin for archived | Get a round and its active timetable, capacity counts, and availability. |
+| POST | `/courses/:courseId/rounds` | Admin | Create a weekly round with `{ startDate, endDate, capacity, scheduleMode?: "WEEKLY", schedules? }`, or a custom round with `{ startDate, endDate, capacity, scheduleMode: "CUSTOM", occurrences? }`. |
 | PATCH | `/rounds/:id` | Admin | Update one or more of `{ startDate, endDate, capacity }`. Dates cannot change after bookings exist. |
 | DELETE | `/rounds/:id` | Admin | Delete a round with no bookings. |
-| POST | `/rounds/:id/schedules` | Admin | Add `{ weekday, startTime }`; unavailable after bookings exist. |
-| PATCH | `/rounds/:id/schedules/:scheduleId` | Admin | Update `{ weekday?, startTime? }`; unavailable after bookings exist. |
-| DELETE | `/rounds/:id/schedules/:scheduleId` | Admin | Delete a schedule entry; unavailable after bookings exist. |
+| PATCH | `/rounds/:id/schedule-mode` | Admin | Atomically replace the timetable: `{ scheduleMode: "WEEKLY", schedules: [...] }` or `{ scheduleMode: "CUSTOM", occurrences: [...] }`. Replaces and discards both previous collections, and is allowed after bookings. |
+| POST | `/rounds/:id/schedules` | Admin | Add `{ weekday, startTime, endTime }` to a `WEEKLY` round; allowed after bookings. |
+| PATCH | `/rounds/:id/schedules/:scheduleId` | Admin | Update `{ weekday?, startTime?, endTime? }` on a `WEEKLY` round; allowed after bookings. |
+| DELETE | `/rounds/:id/schedules/:scheduleId` | Admin | Delete a weekly entry; allowed after bookings. |
+| POST | `/rounds/:id/occurrences` | Admin | Add `{ startAt, endAt }` to a `CUSTOM` round. |
+| PATCH | `/rounds/:id/occurrences/:occurrenceId` | Admin | Update `{ startAt?, endAt? }` on a `CUSTOM` round. |
+| DELETE | `/rounds/:id/occurrences/:occurrenceId` | Admin | Delete a custom occurrence. |
 
 ## Course communities
 

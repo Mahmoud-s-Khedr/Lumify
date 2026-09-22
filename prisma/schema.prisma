@@ -33,6 +33,13 @@ enum Weekday {
   @@map("weekday")
 }
 
+enum RoundScheduleMode {
+  WEEKLY
+  CUSTOM
+
+  @@map("round_schedule_mode")
+}
+
 enum BookingStatus {
   PENDING_PAYMENT
   PENDING_REVIEW
@@ -203,6 +210,7 @@ model CourseRound {
   startDate           DateTime        @db.Date @map("start_date")
   endDate             DateTime        @db.Date @map("end_date")
   capacity            Int
+  scheduleMode        RoundScheduleMode @default(WEEKLY) @map("schedule_mode")
   liveJoinUrl         String?         @map("live_join_url")
   whatsappUrl         String?         @map("whatsapp_url")
   joiningInstructions String?         @map("joining_instructions")
@@ -210,6 +218,7 @@ model CourseRound {
   updatedAt           DateTime        @default(now()) @updatedAt @map("updated_at")
   course              Course          @relation(fields: [courseId], references: [id])
   schedules           RoundSchedule[]
+  occurrences         RoundOccurrence[]
   materials           RoundMaterial[]
   bookings            Booking[]
   sessions            Session[]
@@ -223,11 +232,24 @@ model RoundSchedule {
   roundId   BigInt      @map("round_id")
   weekday   Weekday
   startTime DateTime    @db.Time(0) @map("start_time")
+  endTime   DateTime    @db.Time(0) @map("end_time")
   createdAt DateTime    @default(now()) @map("created_at")
   round     CourseRound @relation(fields: [roundId], references: [id])
 
-  @@unique([roundId, weekday])
+  @@index([roundId, weekday])
   @@map("round_schedules")
+}
+
+model RoundOccurrence {
+  id        BigInt      @id @default(autoincrement())
+  roundId   BigInt      @map("round_id")
+  startAt   DateTime    @map("start_at")
+  endAt     DateTime    @map("end_at")
+  createdAt DateTime    @default(now()) @map("created_at")
+  round     CourseRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@index([roundId, startAt])
+  @@map("round_occurrences")
 }
 
 model RoundMaterial {

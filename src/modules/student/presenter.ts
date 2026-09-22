@@ -7,11 +7,23 @@ function dateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-function publicSchedule(schedule: { id: bigint; weekday: string; startTime: Date }) {
+function publicSchedule(schedule: { id: bigint; weekday: string; startTime: Date; endTime: Date }) {
+  const startTime = schedule.startTime.toISOString().slice(11, 16);
+  const endTime = schedule.endTime.toISOString().slice(11, 16);
   return {
     id: schedule.id.toString(),
     weekday: schedule.weekday,
-    startTime: schedule.startTime.toISOString().slice(11, 16),
+    startTime,
+    endTime,
+    endsNextDay: endTime < startTime,
+  };
+}
+
+function publicOccurrence(occurrence: { id: bigint; startAt: Date; endAt: Date }) {
+  return {
+    id: occurrence.id.toString(),
+    startAt: occurrence.startAt.toISOString(),
+    endAt: occurrence.endAt.toISOString(),
   };
 }
 
@@ -64,7 +76,10 @@ export function publicStudentRound(round: StudentRound) {
       startDate: dateOnly(round.startDate),
       endDate: dateOnly(round.endDate),
       state: calculateRoundState(round, utcCalendarToday()),
-      schedules: round.schedules.map(publicSchedule),
+      scheduleMode: round.scheduleMode,
+      schedules: round.scheduleMode === 'WEEKLY' ? round.schedules.map(publicSchedule) : [],
+      occurrences:
+        round.scheduleMode === 'CUSTOM' ? round.occurrences.map(publicOccurrence) : [],
     },
     sessions: round.sessions.map((session) => ({
       id: session.id.toString(),

@@ -1,4 +1,3 @@
-import { Prisma } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import { requireAdmin, requireUser } from '../../common/authorization/auth.js';
@@ -13,19 +12,25 @@ import {
   createRoundSchema,
   listRoundsQuerySchema,
   materialParamsSchema,
+  occurrenceParamsSchema,
+  occurrenceValuesSchema,
+  replaceScheduleModeSchema,
   roundParamsSchema,
   scheduleParamsSchema,
   scheduleValuesSchema,
   updateMaterialSchema,
+  updateOccurrenceSchema,
   updateRoundSchema,
   updateScheduleSchema,
 } from './schemas.js';
 import {
   createMaterial,
+  createOccurrence,
   createRound,
   createSchedule,
   deleteFileIfOrphaned,
   deleteMaterial,
+  deleteOccurrence,
   deleteRound,
   deleteSchedule,
   findCourseForRounds,
@@ -34,7 +39,9 @@ import {
   hasMaterialAccess,
   listCourseRounds,
   listMaterials,
+  replaceScheduleMode,
   updateMaterial,
+  updateOccurrence,
   updateRound,
   updateSchedule,
 } from './service.js';
@@ -88,7 +95,7 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Rounds'],
-        summary: 'Get round details and its weekly schedule',
+        summary: 'Get round details and its timetable',
         params: zodSchema(roundParamsSchema),
       },
     },
@@ -103,7 +110,7 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Rounds'],
-        summary: 'Create a course round with a weekly schedule',
+        summary: 'Create a course round with a weekly or custom timetable',
         params: zodSchema(courseParamsSchema),
         body: zodSchema(createRoundSchema),
       },
@@ -158,6 +165,24 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  app.patch(
+    '/rounds/:id/schedule-mode',
+    {
+      schema: {
+        tags: ['Rounds'],
+        summary: 'Atomically replace a round timetable and scheduling mode',
+        params: zodSchema(roundParamsSchema),
+        body: zodSchema(replaceScheduleModeSchema),
+      },
+    },
+    async (request) => {
+      await requireAdmin(request);
+      const params = parseRequest(roundParamsSchema, request.params);
+      const body = parseRequest(replaceScheduleModeSchema, request.body);
+      return { round: publicRound(await replaceScheduleMode(BigInt(params.id), body)) };
+    },
+  );
+
   app.post(
     '/rounds/:id/schedules',
     {
@@ -172,18 +197,8 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
       await requireAdmin(request);
       const params = parseRequest(roundParamsSchema, request.params);
       const body = parseRequest(scheduleValuesSchema, request.body);
-      try {
-        const round = await createSchedule(BigInt(params.id), body);
-        return reply.code(201).send({ round: publicRound(round) });
-      } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')
-          throw new AppError(
-            409,
-            'This weekday already has a schedule entry.',
-            'DUPLICATE_SCHEDULE_WEEKDAY',
-          );
-        throw error;
-      }
+      const round = await createSchedule(BigInt(params.id), body);
+      return reply.code(201).send({ round: publicRound(round) });
     },
   );
 
@@ -201,18 +216,8 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
       await requireAdmin(request);
       const params = parseRequest(scheduleParamsSchema, request.params);
       const body = parseRequest(updateScheduleSchema, request.body);
-      try {
-        const round = await updateSchedule(BigInt(params.id), BigInt(params.scheduleId), body);
-        return { round: publicRound(round) };
-      } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')
-          throw new AppError(
-            409,
-            'This weekday already has a schedule entry.',
-            'DUPLICATE_SCHEDULE_WEEKDAY',
-          );
-        throw error;
-      }
+      const round = await updateSchedule(BigInt(params.id), BigInt(params.scheduleId), body);
+      return { round: publicRound(round) };
     },
   );
 
@@ -229,6 +234,64 @@ export async function roundRoutes(app: FastifyInstance): Promise<void> {
       await requireAdmin(request);
       const params = parseRequest(scheduleParamsSchema, request.params);
       await deleteSchedule(BigInt(params.id), BigInt(params.scheduleId));
+      return reply.code(204).send();
+    },
+  );
+
+  app.post(
+    '/rounds/:id/occurrences',
+    {
+      schema: {
+        tags: ['Rounds'],
+        summary: 'Add a custom UTC occurrence',
+        params: zodSchema(roundParamsSchema),
+        body: zodSchema(occurrenceValuesSchema),
+      },
+    },
+    async (request, reply) => {
+      await requireAdmin(request);
+      const params = parseRequest(roundParamsSchema, request.params);
+      const body = parseRequest(occurrenceValuesSchema, request.body);
+      const round = await createOccurrence(BigInt(params.id), body);
+      return reply.code(201).send({ round: publicRound(round) });
+    },
+  );
+
+  app.patch(
+    '/rounds/:id/occurrences/:occurrenceId',
+    {
+      schema: {
+        tags: ['Rounds'],
+        summary: 'Update a custom UTC occurrence',
+        params: zodSchema(occurrenceParamsSchema),
+        body: zodSchema(updateOccurrenceSchema),
+      },
+    },
+    async (request) => {
+      await requireAdmin(request);
+      const params = parseRequest(occurrenceParamsSchema, request.params);
+      const body = parseRequest(updateOccurrenceSchema, request.body);
+      return {
+        round: publicRound(
+          await updateOccurrence(BigInt(params.id), BigInt(params.occurrenceId), body),
+        ),
+      };
+    },
+  );
+
+  app.delete(
+    '/rounds/:id/occurrences/:occurrenceId',
+    {
+      schema: {
+        tags: ['Rounds'],
+        summary: 'Delete a custom occurrence',
+        params: zodSchema(occurrenceParamsSchema),
+      },
+    },
+    async (request, reply) => {
+      await requireAdmin(request);
+      const params = parseRequest(occurrenceParamsSchema, request.params);
+      await deleteOccurrence(BigInt(params.id), BigInt(params.occurrenceId));
       return reply.code(204).send();
     },
   );

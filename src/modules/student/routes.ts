@@ -35,7 +35,7 @@ const nextSessionSchema = {
 const scheduleSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['id', 'weekday', 'startTime'],
+  required: ['id', 'weekday', 'startTime', 'endTime', 'endsNextDay'],
   properties: {
     id: { type: 'string' },
     weekday: {
@@ -43,6 +43,19 @@ const scheduleSchema = {
       enum: ['SATURDAY', 'SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'],
     },
     startTime: { type: 'string', pattern: '^([01]\\d|2[0-3]):[0-5]\\d$' },
+    endTime: { type: 'string', pattern: '^([01]\\d|2[0-3]):[0-5]\\d$' },
+    endsNextDay: { type: 'boolean' },
+  },
+} as const;
+
+const occurrenceSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'startAt', 'endAt'],
+  properties: {
+    id: { type: 'string' },
+    startAt: { type: 'string', format: 'date-time' },
+    endAt: { type: 'string', format: 'date-time' },
   },
 } as const;
 
@@ -125,13 +138,15 @@ const studentRoundResponseSchema = {
     round: {
       type: 'object',
       additionalProperties: false,
-      required: ['id', 'startDate', 'endDate', 'state', 'schedules'],
+      required: ['id', 'startDate', 'endDate', 'state', 'scheduleMode', 'schedules', 'occurrences'],
       properties: {
         id: { type: 'string' },
         startDate: { type: 'string', format: 'date' },
         endDate: { type: 'string', format: 'date' },
         state: { type: 'string', enum: ['UPCOMING', 'IN_PROGRESS', 'FINISHED'] },
+        scheduleMode: { type: 'string', enum: ['WEEKLY', 'CUSTOM'] },
         schedules: { type: 'array', items: scheduleSchema },
+        occurrences: { type: 'array', items: occurrenceSchema },
       },
     },
     sessions: {

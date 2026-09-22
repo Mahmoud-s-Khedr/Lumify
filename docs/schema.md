@@ -24,6 +24,11 @@ CREATE TYPE weekday AS ENUM (
     'FRIDAY'
 );
 
+CREATE TYPE round_schedule_mode AS ENUM (
+    'WEEKLY',
+    'CUSTOM'
+);
+
 
 CREATE TYPE booking_status AS ENUM (
     'PENDING_PAYMENT',
@@ -156,6 +161,7 @@ CREATE TABLE course_rounds (
     end_date                DATE NOT NULL,
 
     capacity                INTEGER NOT NULL,
+    schedule_mode           round_schedule_mode NOT NULL DEFAULT 'WEEKLY',
 
     live_join_url           TEXT,
     whatsapp_url            TEXT,
@@ -177,7 +183,21 @@ CREATE TABLE round_schedules (
 
     weekday         weekday NOT NULL,
     start_time      TIME NOT NULL,
+    end_time        TIME NOT NULL,
 
+    created_at      TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+
+-- =========================================================
+-- CUSTOM ROUND OCCURRENCES
+-- =========================================================
+
+CREATE TABLE round_occurrences (
+    id              BIGSERIAL PRIMARY KEY,
+    round_id        BIGINT NOT NULL REFERENCES course_rounds(id) ON DELETE CASCADE,
+    start_at        TIMESTAMP NOT NULL,
+    end_at          TIMESTAMP NOT NULL,
     created_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
 

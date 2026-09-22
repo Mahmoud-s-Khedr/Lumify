@@ -159,9 +159,11 @@ Admin can:
 
 ---
 
-## 8. Flexible round schedule
+## 8. Flexible round timetable
 
-A round can have multiple weekly days with different starting times.
+A round can use either a recurring UTC weekly timetable or exact UTC custom occurrences. Weekly
+entries may have multiple non-overlapping rules on a weekday and may finish on the next day;
+custom timestamps must end in `Z`, cannot overlap, and do not create delivery sessions.
 
 Example:
 
@@ -171,7 +173,9 @@ Monday     → 16:00
 Thursday   → 20:30
 ```
 
-The admin can add, update, and remove schedule entries.
+The admin can add, update, and remove active timetable entries, or atomically replace the entire
+timetable while switching modes. These operations remain available after enrollment; round dates
+and round deletion remain booking-protected.
 
 ---
 
@@ -364,8 +368,8 @@ This operation must be transactional so two simultaneous approvals cannot exceed
 ## 15. Capacity modification
 
 Capacity can be raised or lowered at any time. Any booking, including a pending request, still
-locks the round dates and weekly schedule. Materials and external links remain editable after
-enrollment.
+locks the round dates and prevents deletion. Weekly and custom timetable entries, materials, and
+external links remain editable after enrollment.
 
 If capacity is lowered below the confirmed count, existing confirmations remain valid, available
 capacity is reported as zero, and no further booking can be approved until capacity is raised.
@@ -688,7 +692,7 @@ Thursday 20:30
 
 ---
 
-## J12 — Modify round schedule
+## J12 — Modify round timetable
 
 ```text
 Existing:
@@ -702,6 +706,9 @@ Tuesday 18:00
 
 → updated schedule returned correctly
 ```
+
+An admin may instead replace the weekly rules with a complete list of UTC custom occurrences;
+the previous weekly entries are removed atomically and delivery sessions remain unchanged.
 
 ---
 

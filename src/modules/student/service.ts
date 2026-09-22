@@ -33,6 +33,7 @@ const studentCourseInclude = {
 const studentRoundInclude = {
   course: { select: { id: true, title: true, description: true } },
   schedules: { orderBy: { weekday: 'asc' as const } },
+  occurrences: { orderBy: { startAt: 'asc' as const } },
   sessions: {
     select: { id: true, title: true, sessionDate: true, recordingUrl: true },
     orderBy: { sessionDate: 'asc' as const },

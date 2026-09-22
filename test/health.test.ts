@@ -55,8 +55,16 @@ describe('running backend health and docs', () => {
       content: {
         'application/json': {
           schema: {
-            required: ['startDate', 'endDate', 'capacity'],
-            properties: { schedules: { type: 'array' } },
+            anyOf: [
+              {
+                required: ['startDate', 'endDate', 'capacity'],
+                properties: { schedules: { type: 'array' } },
+              },
+              {
+                required: ['startDate', 'endDate', 'capacity', 'scheduleMode'],
+                properties: { occurrences: { type: 'array' } },
+              },
+            ],
           },
         },
       },
