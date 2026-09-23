@@ -19,6 +19,7 @@ const maxRoundMaterialBytes = 100 * 1024 * 1024;
 const maxPaymentReceiptBytes = 10 * 1024 * 1024;
 const maxProfileAvatarBytes = 2 * 1024 * 1024;
 const maxCommunityAttachmentBytes = 20 * 1024 * 1024;
+const maxCertificateTemplateBytes = 20 * 1024 * 1024;
 
 export type FileAccessIdentity = { sub: string; role: UserRole };
 
@@ -27,10 +28,11 @@ export type FileWithDownloadAccess = Prisma.FileGetPayload<{
 }>;
 
 export function requiresAdminUpload(kind: FileKind): boolean {
-  return kind === 'COURSE_IMAGE' || kind === 'ROUND_MATERIAL';
+  return kind === 'COURSE_IMAGE' || kind === 'ROUND_MATERIAL' || kind === 'CERTIFICATE_TEMPLATE';
 }
 
 function directoryFor(kind: FileKind): string {
+  if (kind === 'CERTIFICATE_TEMPLATE') return 'certificate-templates';
   if (kind === 'COURSE_IMAGE') return 'course-images';
   if (kind === 'ROUND_MATERIAL') return 'round-materials';
   if (kind === 'PAYMENT_RECEIPT') return 'payment-receipts';
@@ -39,6 +41,7 @@ function directoryFor(kind: FileKind): string {
 }
 
 function maxSizeFor(kind: FileKind): number {
+  if (kind === 'CERTIFICATE_TEMPLATE') return maxCertificateTemplateBytes;
   if (kind === 'COURSE_IMAGE') return maxCourseImageBytes;
   if (kind === 'ROUND_MATERIAL') return maxRoundMaterialBytes;
   if (kind === 'PAYMENT_RECEIPT') return maxPaymentReceiptBytes;
@@ -104,6 +107,7 @@ export async function assertFileDownloadAccess(
   const userId = BigInt(identity.sub);
   const ownsFile = file.uploadedById === userId;
   const ownsReceipt = file.receipts.some((booking) => booking.studentId === userId);
+  const ownsCertificate = file.generatedCertificateFor?.booking.studentId === userId;
   const materialRoundIds = file.materials.map((material) => material.roundId);
   const hasConfirmedMaterialAccess =
     identity.role === 'STUDENT' && materialRoundIds.length > 0
@@ -120,6 +124,7 @@ export async function assertFileDownloadAccess(
     identity.role !== 'ADMIN' &&
     !ownsFile &&
     !ownsReceipt &&
+    !ownsCertificate &&
     !hasConfirmedMaterialAccess &&
     !hasCommunityAccess
   )

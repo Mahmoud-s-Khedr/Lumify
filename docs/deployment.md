@@ -118,10 +118,30 @@ Before database-changing releases, take a backup. Application rollback means che
 previous known-good revision and rebuilding; database migrations need an explicit forward repair
 or a tested backup restore because Prisma production migrations are not automatically reversed.
 
+## Certificate issuance job
+
+Set `CERTIFICATE_JOB_SECRET` to a distinct random value (at least 32 characters) and
+`PUBLIC_BACKEND_URL` to the public API origin. The latter is embedded in certificate QR codes as
+the public verification URL. After deploying, an administrator must upload, inspect, and activate
+a fillable PDF through the certificate-template endpoints before certificates can be issued.
+
+Run the protected issuance endpoint once a day after midnight UTC from the VPS. Keep the secret in
+the protected production environment file rather than putting it literally in the crontab:
+
+```cron
+5 0 * * * cd /srv/lumify && set -a && . ./.env.production && set +a && curl --fail --silent --show-error -X POST -H "x-certificate-job-secret: $CERTIFICATE_JOB_SECRET" "$PUBLIC_BACKEND_URL/internal/jobs/certificates/issue" >> /var/log/lumify-certificates.log 2>&1
+```
+
+The job only creates a certificate for confirmed bookings whose round end date is before the
+current UTC day. It is safe to repeat and also retries certificate email delivery without changing
+the immutable generated PDF.
+
 ## 5. Production verification
 
 After deployment, verify registration email delivery, OTP/reset flows, R2 upload and authorized
 download, admin bootstrap/login, manual-payment receipt access, approval, protected course access,
 cancellation completion, Swagger, and both `/health` and `/ready`. Also confirm that PostgreSQL is
 not reachable from the public network and that an unconfirmed student cannot retrieve private
-files, join links, materials, or recordings.
+files, join links, materials, or recordings. Upload and inspect the certificate template, activate
+it, invoke the issuance job with its secret, and verify both the student download and public QR
+verification response before relying on the production cron.

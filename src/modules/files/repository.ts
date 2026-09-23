@@ -11,6 +11,7 @@ export const fileDownloadInclude = {
   communityMessageAttachments: {
     select: { message: { select: { courseId: true, deletedAt: true } } },
   },
+  generatedCertificateFor: { select: { booking: { select: { studentId: true } } } },
 } satisfies Prisma.FileInclude;
 
 export function createFileRecord(input: {

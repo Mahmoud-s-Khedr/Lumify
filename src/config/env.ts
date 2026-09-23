@@ -45,6 +45,8 @@ const envSchema = z.object({
   R2_ACCESS_KEY_ID: z.string().min(1).optional(),
   R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   R2_PRESIGNED_URL_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
+  CERTIFICATE_JOB_SECRET: z.string().min(32).optional(),
+  PUBLIC_BACKEND_URL: z.string().url().optional(),
   ADMIN_EMAIL: z.string().email().optional(),
   ADMIN_PASSWORD: z.string().min(8).optional(),
   ADMIN_NAME: z.string().min(1).max(255).default('Lumify Admin'),
@@ -69,6 +71,8 @@ if (parsed.data.NODE_ENV === 'production') {
     'R2_BUCKET_NAME',
     'R2_ACCESS_KEY_ID',
     'R2_SECRET_ACCESS_KEY',
+    'CERTIFICATE_JOB_SECRET',
+    'PUBLIC_BACKEND_URL',
   ] as const;
   for (const key of requiredKeys) {
     if (!parsed.data[key]) {

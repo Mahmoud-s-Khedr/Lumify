@@ -30,3 +30,28 @@ export async function sendOtpEmail(input: {
   });
   if (result.error) throw new Error(`Unable to send email: ${result.error.message}`);
 }
+
+export async function sendCertificateEmail(input: {
+  email: string;
+  studentName: string;
+  courseName: string;
+  attachment: Uint8Array;
+  filename: string;
+}): Promise<void> {
+  if (
+    env.NODE_ENV === 'test' ||
+    !env.EMAIL_DELIVERY_ENABLED ||
+    !env.RESEND_API_KEY ||
+    !env.RESEND_FROM_EMAIL
+  )
+    return;
+  const resend = new Resend(env.RESEND_API_KEY);
+  const result = await resend.emails.send({
+    from: env.RESEND_FROM_EMAIL,
+    to: input.email,
+    subject: `Your Lumify certificate for ${input.courseName}`,
+    text: `Hello ${input.studentName}, your certificate for ${input.courseName} is attached.`,
+    attachments: [{ filename: input.filename, content: Buffer.from(input.attachment) }],
+  });
+  if (result.error) throw new Error(`Unable to send certificate email: ${result.error.message}`);
+}

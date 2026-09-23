@@ -151,6 +151,9 @@ model File {
   materials    RoundMaterial[]
   receipts     Booking[] @relation("ReceiptFile")
   communityMessageAttachments CommunityMessageAttachment[]
+  activeCertificateTemplate CertificateTemplate? @relation("ActiveCertificateTemplate")
+  certificateTemplateInspection CertificateTemplateInspection?
+  generatedCertificateFor Certificate? @relation("GeneratedCertificatePdf")
 
   @@unique([storageKey])
   @@map("files")
@@ -285,10 +288,51 @@ model Booking {
   round            CourseRound   @relation(fields: [roundId], references: [id])
   paymentMethod    PaymentMethod? @relation(fields: [paymentMethodKey], references: [key])
   receiptFile      File?         @relation("ReceiptFile", fields: [receiptFileId], references: [id])
+  certificate      Certificate?
 
   @@unique([studentId, roundId])
   @@index([roundId, status])
   @@map("bookings")
+}
+
+model CertificateTemplate {
+  id          Int      @id @default(1)
+  fileId      BigInt   @unique @map("file_id")
+  fieldReport Json     @map("field_report")
+  inspectedAt DateTime @map("inspected_at")
+  activatedAt DateTime @default(now()) @map("activated_at")
+  file        File     @relation("ActiveCertificateTemplate", fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@map("certificate_templates")
+}
+
+model CertificateTemplateInspection {
+  fileId      BigInt   @id @map("file_id")
+  fieldReport Json     @map("field_report")
+  inspectedAt DateTime @default(now()) @map("inspected_at")
+  file        File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@map("certificate_template_inspections")
+}
+
+model Certificate {
+  id                BigInt    @id @default(autoincrement())
+  publicId          String    @unique @map("public_id") @db.VarChar(64)
+  bookingId         BigInt    @unique @map("booking_id")
+  fileId            BigInt    @unique @map("file_id")
+  completionDate    DateTime  @db.Date @map("completion_date")
+  issuedAt          DateTime  @default(now()) @map("issued_at")
+  emailDeliveredAt  DateTime? @map("email_delivered_at")
+  deliveryClaimedAt DateTime? @map("delivery_claimed_at")
+  deliveryClaimToken String?  @map("delivery_claim_token") @db.VarChar(36)
+  deliveryAttempts  Int       @default(0) @map("delivery_attempts")
+  lastDeliveryError String?   @map("last_delivery_error")
+  booking           Booking   @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  file              File      @relation("GeneratedCertificatePdf", fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@index([publicId])
+  @@index([emailDeliveredAt, deliveryClaimedAt])
+  @@map("certificates")
 }
 
 model CourseReview {

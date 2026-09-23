@@ -26,6 +26,7 @@ import { studentRoutes } from '../modules/student/routes.js';
 import { userRoutes } from '../modules/users/routes.js';
 import { communityRoutes } from '../modules/communities/routes.js';
 import { registerCommunitySocket } from '../modules/communities/socket.js';
+import { certificateRoutes } from '../modules/certificates/routes.js';
 
 const healthResponseSchema = {
   type: 'object',
@@ -163,6 +164,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(sessionRoutes);
   await app.register(studentRoutes);
   await app.register(communityRoutes);
+  await app.register(certificateRoutes);
   registerCommunitySocket(app);
 
   return app;

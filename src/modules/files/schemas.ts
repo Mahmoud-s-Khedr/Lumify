@@ -33,6 +33,11 @@ const materialMimeTypeSchema = z
 
 export const uploadSchema = z.discriminatedUnion('kind', [
   z.object({
+    kind: z.literal('CERTIFICATE_TEMPLATE'),
+    originalName: originalNameSchema,
+    mimeType: z.literal('application/pdf'),
+  }),
+  z.object({
     kind: z.literal('COURSE_IMAGE'),
     originalName: originalNameSchema,
     mimeType: z.enum(courseMediaMimeTypes),
@@ -60,6 +65,12 @@ export const uploadSchema = z.discriminatedUnion('kind', [
 ]);
 
 export const completeSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('CERTIFICATE_TEMPLATE'),
+    originalName: originalNameSchema,
+    mimeType: z.literal('application/pdf'),
+    storageKey: z.string().regex(/^certificate-templates\/[0-9a-f-]{36}$/),
+  }),
   z.object({
     kind: z.literal('COURSE_IMAGE'),
     originalName: originalNameSchema,
