@@ -129,6 +129,68 @@ describe('Phase 3 file and course journeys', () => {
     expect(adminArchivedList.body.courses).toHaveLength(1);
   });
 
+  it('stores multiple prerequisite courses and rejects prerequisite cycles', async () => {
+    const admin = await prisma.user.create({
+      data: {
+        name: 'Admin',
+        email: 'admin@example.com',
+        passwordHash: await hashPassword(password),
+        emailVerified: true,
+        role: 'ADMIN',
+      },
+    });
+    const [firstPrerequisite, secondPrerequisite, thirdPrerequisite] = await Promise.all([
+      prisma.course.create({ data: { title: 'Foundations', price: 1 } }),
+      prisma.course.create({ data: { title: 'TypeScript', price: 1 } }),
+      prisma.course.create({ data: { title: 'Databases', price: 1 } }),
+    ]);
+    const login = await api<{ accessToken: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: admin.email, password }),
+    });
+    const headers = { authorization: `Bearer ${login.body.accessToken}` };
+    const created = await api<{ course: { id: string; prerequisiteCourseIds: string[] } }>(
+      '/courses',
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          title: 'Advanced Backend',
+          price: 1,
+          prerequisiteCourseIds: [
+            firstPrerequisite.id.toString(),
+            secondPrerequisite.id.toString(),
+          ],
+        }),
+      },
+    );
+    expect(created.status).toBe(201);
+    expect(created.body.course.prerequisiteCourseIds).toEqual(
+      [firstPrerequisite.id, secondPrerequisite.id].sort().map(String),
+    );
+
+    const intermediatePrerequisite = await api(`/courses/${firstPrerequisite.id.toString()}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ prerequisiteCourseIds: [thirdPrerequisite.id.toString()] }),
+    });
+    expect(intermediatePrerequisite.status).toBe(200);
+
+    const cycle = await api(`/courses/${thirdPrerequisite.id.toString()}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ prerequisiteCourseIds: [created.body.course.id] }),
+    });
+    expect(cycle.status).toBe(400);
+
+    const cleared = await api<{ course: { prerequisiteCourseIds: string[] } }>(
+      `/courses/${created.body.course.id}`,
+      { method: 'PATCH', headers, body: JSON.stringify({ prerequisiteCourseIds: [] }) },
+    );
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.course.prerequisiteCourseIds).toEqual([]);
+  });
+
   it('rejects a course image that has not been uploaded by the current admin', async () => {
     const admin = await prisma.user.create({
       data: {

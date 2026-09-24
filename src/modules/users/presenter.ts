@@ -1,5 +1,7 @@
 import type { File, User } from '@prisma/client';
 
+import { env } from '../../config/env.js';
+
 type UserWithAvatar = User & { avatarFile?: File | null };
 
 function publicAvatar(file: File) {
@@ -8,7 +10,7 @@ function publicAvatar(file: File) {
     originalName: file.originalName,
     mimeType: file.mimeType,
     sizeBytes: file.sizeBytes?.toString() ?? null,
-    downloadUrl: `/files/${file.id.toString()}/download`,
+    downloadUrl: `${(env.PUBLIC_BACKEND_URL ?? `http://localhost:${env.PORT}`).replace(/\/$/, '')}/files/${file.id.toString()}/download`,
   };
 }
 

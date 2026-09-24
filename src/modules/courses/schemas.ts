@@ -9,7 +9,7 @@ const courseValuesSchema = z.object({
   outcomes: stringListSchema.nullable().optional(),
   skills: stringListSchema.nullable().optional(),
   prerequisiteSkills: stringListSchema.nullable().optional(),
-  prerequisiteCourseId: idSchema.nullable().optional(),
+  prerequisiteCourseIds: z.array(idSchema).max(100).optional(),
   demoVideoUrl: z.string().url().max(2_000).nullable().optional(),
   imageFileIds: z.array(idSchema).max(20).optional(),
 });

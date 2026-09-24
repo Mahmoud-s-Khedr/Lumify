@@ -121,7 +121,6 @@ CREATE TABLE courses (
     skills                  JSONB,
     prerequisite_skills     JSONB,
 
-    prerequisite_course_id  BIGINT REFERENCES courses(id),
 
     demo_video_url          TEXT,
 
@@ -129,6 +128,18 @@ CREATE TABLE courses (
 
     created_at              TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+
+-- =========================================================
+-- COURSE PREREQUISITES
+-- =========================================================
+
+CREATE TABLE course_prerequisites (
+    course_id               BIGINT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    prerequisite_course_id  BIGINT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+
+    PRIMARY KEY (course_id, prerequisite_course_id)
 );
 
 

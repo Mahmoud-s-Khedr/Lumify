@@ -121,8 +121,8 @@ or a tested backup restore because Prisma production migrations are not automati
 ## Certificate issuance job
 
 Set `CERTIFICATE_JOB_SECRET` to a distinct random value (at least 32 characters) and
-`PUBLIC_BACKEND_URL` to the public API origin. The latter is embedded in certificate QR codes as
-the public verification URL. After deploying, an administrator must upload, inspect, and activate
+`PUBLIC_BACKEND_URL` to the public API origin. It anchors public verification URLs in certificate
+QR codes and absolute API download URLs. After deploying, an administrator must upload, inspect, and activate
 a fillable PDF through the certificate-template endpoints before certificates can be issued.
 
 Run the protected issuance endpoint once a day after midnight UTC from the VPS. Keep the secret in

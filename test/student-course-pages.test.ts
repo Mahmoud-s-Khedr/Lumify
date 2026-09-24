@@ -169,7 +169,10 @@ describe('student course pages', () => {
       recordingCount: 0,
     });
     expect(listed.body.courses[1]).toMatchObject({
-      image: { id: image.id.toString(), downloadUrl: `/files/${image.id.toString()}/download` },
+      image: {
+        id: image.id.toString(),
+        downloadUrl: `http://127.0.0.1:${process.env.TEST_API_PORT ?? '3101'}/files/${image.id.toString()}/download`,
+      },
       state: 'UPCOMING',
       recordingCount: 2,
     });
@@ -289,7 +292,9 @@ describe('student course pages', () => {
         {
           title: 'Guide',
           kind: 'FILE',
-          file: { downloadUrl: `/files/${file.id.toString()}/download` },
+          file: {
+            downloadUrl: `http://127.0.0.1:${process.env.TEST_API_PORT ?? '3101'}/files/${file.id.toString()}/download`,
+          },
         },
         { title: 'External reference', kind: 'LINK', externalUrl: 'https://example.com/reference' },
       ],

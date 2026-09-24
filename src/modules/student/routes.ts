@@ -17,7 +17,7 @@ const fileSchema = {
     originalName: { type: 'string' },
     mimeType: { type: 'string', nullable: true },
     sizeBytes: { type: 'string', nullable: true },
-    downloadUrl: { type: 'string' },
+    downloadUrl: { type: 'string', format: 'uri' },
   },
 } as const;
 

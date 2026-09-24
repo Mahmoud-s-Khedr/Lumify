@@ -10,13 +10,16 @@ export async function api<T = unknown>(
   path: string,
   options: RequestInit = {},
 ): Promise<ApiResponse<T>> {
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...options,
-    headers: {
-      ...(options.body ? { 'content-type': 'application/json' } : {}),
-      ...options.headers,
+  const response = await fetch(
+    path.startsWith('http://') || path.startsWith('https://') ? path : `${baseUrl}${path}`,
+    {
+      ...options,
+      headers: {
+        ...(options.body ? { 'content-type': 'application/json' } : {}),
+        ...options.headers,
+      },
     },
-  });
+  );
   const body =
     response.status === 204
       ? null

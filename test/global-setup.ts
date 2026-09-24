@@ -27,7 +27,14 @@ async function waitForHealth(process: ChildProcess): Promise<void> {
 
 export default async function setup(): Promise<() => Promise<void>> {
   const server = spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'src/app/server.ts'], {
-    env: { ...process.env, NODE_ENV: 'test', HOST: host, PORT: port, LOG_LEVEL: 'silent' },
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      HOST: host,
+      PORT: port,
+      LOG_LEVEL: 'silent',
+      PUBLIC_BACKEND_URL: baseUrl,
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   await waitForHealth(server);

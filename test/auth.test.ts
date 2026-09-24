@@ -250,7 +250,7 @@ describe('Phase 2 authentication and configuration journeys', () => {
     expect(updated.status).toBe(200);
     expect(updated.body.user.avatar).toMatchObject({
       id: complete.body.file.id,
-      downloadUrl: `/files/${complete.body.file.id}/download`,
+      downloadUrl: `http://127.0.0.1:${process.env.TEST_API_PORT ?? '3101'}/files/${complete.body.file.id}/download`,
     });
   });
 

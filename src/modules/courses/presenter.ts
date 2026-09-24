@@ -13,7 +13,9 @@ export function publicCourse(
     outcomes: course.outcomes,
     skills: course.skills,
     prerequisiteSkills: course.prerequisiteSkills,
-    prerequisiteCourseId: course.prerequisiteCourseId?.toString() ?? null,
+    prerequisiteCourseIds: course.prerequisites.map((prerequisite) =>
+      prerequisite.prerequisiteCourseId.toString(),
+    ),
     demoVideoUrl: course.demoVideoUrl,
     archived: course.archived,
     createdAt: course.createdAt.toISOString(),

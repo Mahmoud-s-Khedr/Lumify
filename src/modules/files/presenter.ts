@@ -1,3 +1,5 @@
+import { env } from '../../config/env.js';
+
 export function publicFile(file: {
   id: bigint;
   originalName: string;
@@ -9,6 +11,6 @@ export function publicFile(file: {
     originalName: file.originalName,
     mimeType: file.mimeType,
     sizeBytes: file.sizeBytes?.toString() ?? null,
-    downloadUrl: `/files/${file.id.toString()}/download`,
+    downloadUrl: `${(env.PUBLIC_BACKEND_URL ?? `http://localhost:${env.PORT}`).replace(/\/$/, '')}/files/${file.id.toString()}/download`,
   };
 }

@@ -176,13 +176,12 @@ model Course {
   outcomes             Json?
   skills               Json?
   prerequisiteSkills   Json?         @map("prerequisite_skills")
-  prerequisiteCourseId BigInt?       @map("prerequisite_course_id")
   demoVideoUrl         String?       @map("demo_video_url")
   archived             Boolean       @default(false)
   createdAt            DateTime      @default(now()) @map("created_at")
   updatedAt            DateTime      @default(now()) @updatedAt @map("updated_at")
-  prerequisiteCourse   Course?       @relation("CoursePrerequisite", fields: [prerequisiteCourseId], references: [id])
-  dependentCourses     Course[]      @relation("CoursePrerequisite")
+  prerequisites        CoursePrerequisite[] @relation("CoursePrerequisiteCourse")
+  requiredFor          CoursePrerequisite[] @relation("CoursePrerequisiteRequiredCourse")
   images               CourseImage[]
   rounds               CourseRound[]
   reviews              CourseReview[]
@@ -191,6 +190,17 @@ model Course {
 
   @@index([archived])
   @@map("courses")
+}
+
+model CoursePrerequisite {
+  courseId             BigInt @map("course_id")
+  prerequisiteCourseId BigInt @map("prerequisite_course_id")
+  course               Course @relation("CoursePrerequisiteCourse", fields: [courseId], references: [id], onDelete: Cascade)
+  prerequisiteCourse   Course @relation("CoursePrerequisiteRequiredCourse", fields: [prerequisiteCourseId], references: [id], onDelete: Cascade)
+
+  @@id([courseId, prerequisiteCourseId])
+  @@index([prerequisiteCourseId])
+  @@map("course_prerequisites")
 }
 
 model CourseImage {

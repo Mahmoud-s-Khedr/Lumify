@@ -9,10 +9,31 @@ const courseMediaMimeTypeSet = new Set<string>(courseMediaMimeTypes);
 
 export const courseInclude = {
   images: { include: { file: true }, orderBy: { sortOrder: 'asc' as const } },
+  prerequisites: {
+    select: { prerequisiteCourseId: true },
+    orderBy: { prerequisiteCourseId: 'asc' as const },
+  },
 } satisfies Prisma.CourseInclude;
 
 export type CourseWithImages = Prisma.CourseGetPayload<{ include: typeof courseInclude }>;
 export type CourseRating = { averageRating: number | null; reviewCount: number };
+type CourseQueryClient = Pick<Prisma.TransactionClient, 'course'>;
+
+async function withSerializableTransaction<T>(
+  operation: (transaction: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await prisma.$transaction(operation, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+    } catch (error) {
+      const serializationFailure =
+        error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034';
+      if (!serializationFailure || attempt === 2) throw error;
+    }
+  }
+}
 
 function jsonList(
   value: string[] | null | undefined,
@@ -37,38 +58,45 @@ async function courseRatings(courseIds: bigint[]): Promise<Map<bigint, CourseRat
   );
 }
 
-async function ensureValidPrerequisite(
+async function ensureValidPrerequisites(
+  database: CourseQueryClient,
   courseId: bigint | undefined,
-  prerequisiteId: bigint | null | undefined,
+  prerequisiteIds: bigint[] | undefined,
 ): Promise<void> {
-  if (prerequisiteId === undefined || prerequisiteId === null) return;
-  if (courseId === prerequisiteId)
+  if (prerequisiteIds === undefined) return;
+  if (new Set(prerequisiteIds).size !== prerequisiteIds.length)
+    throw new AppError(
+      400,
+      'Course prerequisites cannot contain duplicates.',
+      'DUPLICATE_PREREQUISITE',
+    );
+  if (courseId !== undefined && prerequisiteIds.includes(courseId))
     throw new AppError(400, 'A course cannot be its own prerequisite.', 'INVALID_PREREQUISITE');
 
-  const seen = new Set<bigint>();
-  let currentId: bigint | null = prerequisiteId;
-  while (currentId !== null) {
-    if (seen.has(currentId))
-      throw new AppError(
-        400,
-        'Course prerequisites cannot contain a cycle.',
-        'INVALID_PREREQUISITE',
-      );
-    seen.add(currentId);
-    if (currentId === courseId)
-      throw new AppError(
-        400,
-        'Course prerequisites cannot contain a cycle.',
-        'INVALID_PREREQUISITE',
-      );
-    const current: { prerequisiteCourseId: bigint | null } | null = await prisma.course.findUnique({
-      where: { id: currentId },
-      select: { prerequisiteCourseId: true },
-    });
-    if (!current)
-      throw new AppError(400, 'The prerequisite course does not exist.', 'INVALID_PREREQUISITE');
-    currentId = current.prerequisiteCourseId;
-  }
+  const courses = await database.course.findMany({
+    select: { id: true, prerequisites: { select: { prerequisiteCourseId: true } } },
+  });
+  const courseIds = new Set(courses.map((course) => course.id));
+  if (prerequisiteIds.some((id) => !courseIds.has(id)))
+    throw new AppError(400, 'The prerequisite course does not exist.', 'INVALID_PREREQUISITE');
+  if (courseId === undefined) return;
+
+  const graph = new Map(
+    courses.map((course) => [
+      course.id,
+      course.id === courseId
+        ? prerequisiteIds
+        : course.prerequisites.map((prerequisite) => prerequisite.prerequisiteCourseId),
+    ]),
+  );
+  const reachesCourse = (id: bigint, seen = new Set<bigint>()): boolean => {
+    if (id === courseId) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return (graph.get(id) ?? []).some((prerequisiteId) => reachesCourse(prerequisiteId, seen));
+  };
+  if (prerequisiteIds.some((id) => reachesCourse(id)))
+    throw new AppError(400, 'Course prerequisites cannot contain a cycle.', 'INVALID_PREREQUISITE');
 }
 
 async function validateImageFiles(
@@ -158,27 +186,30 @@ export async function createCourse(
   input: CreateCourseInput,
   uploaderId: bigint,
 ): Promise<CourseWithImages> {
-  const prerequisiteCourseId =
-    input.prerequisiteCourseId === undefined
-      ? undefined
-      : input.prerequisiteCourseId === null
-        ? null
-        : BigInt(input.prerequisiteCourseId);
-  await ensureValidPrerequisite(undefined, prerequisiteCourseId);
+  const prerequisiteCourseIds = input.prerequisiteCourseIds?.map(BigInt);
   await validateImageFiles(input.imageFileIds, uploaderId);
-  return prisma.course.create({
-    data: {
-      title: input.title,
-      description: input.description,
-      price: input.price,
-      outcomes: jsonList(input.outcomes),
-      skills: jsonList(input.skills),
-      prerequisiteSkills: jsonList(input.prerequisiteSkills),
-      prerequisiteCourseId: prerequisiteCourseId ?? undefined,
-      demoVideoUrl: input.demoVideoUrl,
-      images: input.imageFileIds ? { create: imageCreateData(input.imageFileIds) } : undefined,
-    },
-    include: courseInclude,
+  return withSerializableTransaction(async (tx) => {
+    await ensureValidPrerequisites(tx, undefined, prerequisiteCourseIds);
+    return tx.course.create({
+      data: {
+        title: input.title,
+        description: input.description,
+        price: input.price,
+        outcomes: jsonList(input.outcomes),
+        skills: jsonList(input.skills),
+        prerequisiteSkills: jsonList(input.prerequisiteSkills),
+        prerequisites: prerequisiteCourseIds
+          ? {
+              create: prerequisiteCourseIds.map((prerequisiteCourseId) => ({
+                prerequisiteCourseId,
+              })),
+            }
+          : undefined,
+        demoVideoUrl: input.demoVideoUrl,
+        images: input.imageFileIds ? { create: imageCreateData(input.imageFileIds) } : undefined,
+      },
+      include: courseInclude,
+    });
   });
 }
 
@@ -187,17 +218,12 @@ export async function updateCourse(
   input: UpdateCourseInput,
   uploaderId: bigint,
 ): Promise<CourseWithImages> {
-  const exists = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true } });
-  if (!exists) throw new AppError(404, 'Course was not found.', 'COURSE_NOT_FOUND');
-  const prerequisiteCourseId =
-    input.prerequisiteCourseId === undefined
-      ? undefined
-      : input.prerequisiteCourseId === null
-        ? null
-        : BigInt(input.prerequisiteCourseId);
-  await ensureValidPrerequisite(courseId, prerequisiteCourseId);
+  const prerequisiteCourseIds = input.prerequisiteCourseIds?.map(BigInt);
   await validateImageFiles(input.imageFileIds, uploaderId);
-  return prisma.$transaction(async (tx) => {
+  return withSerializableTransaction(async (tx) => {
+    const exists = await tx.course.findUnique({ where: { id: courseId }, select: { id: true } });
+    if (!exists) throw new AppError(404, 'Course was not found.', 'COURSE_NOT_FOUND');
+    await ensureValidPrerequisites(tx, courseId, prerequisiteCourseIds);
     if (input.imageFileIds !== undefined) await tx.courseImage.deleteMany({ where: { courseId } });
     return tx.course.update({
       where: { id: courseId },
@@ -208,7 +234,15 @@ export async function updateCourse(
         outcomes: jsonList(input.outcomes),
         skills: jsonList(input.skills),
         prerequisiteSkills: jsonList(input.prerequisiteSkills),
-        prerequisiteCourseId,
+        prerequisites:
+          prerequisiteCourseIds === undefined
+            ? undefined
+            : {
+                deleteMany: {},
+                create: prerequisiteCourseIds.map((prerequisiteCourseId) => ({
+                  prerequisiteCourseId,
+                })),
+              },
         demoVideoUrl: input.demoVideoUrl,
         archived: input.archived,
         images: input.imageFileIds ? { create: imageCreateData(input.imageFileIds) } : undefined,

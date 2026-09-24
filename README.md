@@ -139,6 +139,7 @@ docker compose down --volumes
 | `R2_ACCESS_KEY_ID`                   | —                       | R2 API-token access key; required in production.                      |
 | `R2_SECRET_ACCESS_KEY`               | —                       | R2 API-token secret; required in production.                          |
 | `R2_PRESIGNED_URL_TTL_SECONDS`       | `900`                   | Upload and download URL lifetime (60–3600 seconds).                   |
+| `PUBLIC_BACKEND_URL`                 | `http://localhost:3000` | Public API origin used in file download URLs and certificate links.   |
 | `ADMIN_EMAIL`                        | —                       | Optional idempotent bootstrap-admin email.                            |
 | `ADMIN_PASSWORD`                     | —                       | Bootstrap-admin password (8+ characters).                             |
 | `ADMIN_NAME`                         | `Lumify Admin`          | Bootstrap-admin display name.                                         |
