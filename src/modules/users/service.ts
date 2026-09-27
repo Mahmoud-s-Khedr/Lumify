@@ -1,7 +1,12 @@
 import { Prisma } from '@prisma/client';
 
 import { AppError } from '../../common/errors/app-error.js';
-import { findOwnedProfileAvatar, findUserWithAvatar, updateUserProfile } from './repository.js';
+import {
+  findDiscoverableStudentWithAvatar,
+  findOwnedProfileAvatar,
+  findUserWithAvatar,
+  updateUserProfile,
+} from './repository.js';
 import type { userInclude } from './repository.js';
 import type { UpdateProfileInput } from './schemas.js';
 
@@ -10,6 +15,12 @@ export type UserWithAvatar = Prisma.UserGetPayload<{ include: typeof userInclude
 export async function findCurrentUser(userId: bigint): Promise<UserWithAvatar> {
   const user = await findUserWithAvatar(userId);
   if (!user) throw new AppError(401, 'Authentication is required.', 'UNAUTHENTICATED');
+  return user;
+}
+
+export async function findPublicUser(userId: bigint): Promise<UserWithAvatar> {
+  const user = await findDiscoverableStudentWithAvatar(userId);
+  if (!user) throw new AppError(404, 'User was not found.', 'USER_NOT_FOUND');
   return user;
 }
 

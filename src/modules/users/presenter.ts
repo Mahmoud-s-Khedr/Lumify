@@ -28,3 +28,15 @@ export function publicUser(user: UserWithAvatar) {
     updatedAt: user.updatedAt.toISOString(),
   };
 }
+
+/** The limited profile shared with authenticated students and administrators. */
+export function publicProfile(user: UserWithAvatar) {
+  return {
+    id: user.id.toString(),
+    name: user.name,
+    email: user.email,
+    phone: user.phone,
+    contactInfo: user.contactInfo,
+    avatar: user.avatarFile ? publicAvatar(user.avatarFile) : null,
+  };
+}

@@ -3,11 +3,27 @@ import type { FastifyInstance } from 'fastify';
 import { requireUser } from '../../common/authorization/auth.js';
 import { zodSchema } from '../../common/documentation/zod-schema.js';
 import { parseRequest } from '../../common/validation/request.js';
-import { publicUser } from './presenter.js';
-import { profileSchema } from './schemas.js';
-import { findCurrentUser, updateCurrentUser } from './service.js';
+import { publicProfile, publicUser } from './presenter.js';
+import { profileSchema, publicUserParamsSchema } from './schemas.js';
+import { findCurrentUser, findPublicUser, updateCurrentUser } from './service.js';
 
 export async function userRoutes(app: FastifyInstance): Promise<void> {
+  app.get(
+    '/public/user/:id',
+    {
+      schema: {
+        tags: ['Users'],
+        summary: 'Get a shared student profile',
+        params: zodSchema(publicUserParamsSchema),
+      },
+    },
+    async (request) => {
+      await requireUser(request);
+      const params = parseRequest(publicUserParamsSchema, request.params);
+      return { user: publicProfile(await findPublicUser(BigInt(params.id))) };
+    },
+  );
+
   app.get(
     '/users/me',
     { schema: { tags: ['Users'], summary: 'Get the current profile' } },

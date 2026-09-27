@@ -16,6 +16,9 @@
     "format:check": "prettier --check .",
     "test": "npm run prisma:deploy && NODE_ENV=test LOG_LEVEL=silent vitest run",
     "test:watch": "npm run prisma:deploy && NODE_ENV=test LOG_LEVEL=silent vitest",
+    "simulate:community": "node scripts/community-simulate.mjs",
+    "simulate:community:admin": "node scripts/community-simulate-admin.mjs",
+    "simulate:community:students": "node scripts/community-simulate-students.mjs",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy"

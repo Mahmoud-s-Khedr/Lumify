@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+const idSchema = z.string().regex(/^\d+$/);
+
+export const publicUserParamsSchema = z.object({ id: idSchema });
+
 export const profileSchema = z
   .object({
     name: z.string().min(1).max(255).optional(),

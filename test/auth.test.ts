@@ -95,6 +95,102 @@ describe('Phase 2 authentication and configuration journeys', () => {
     expect(verification.body.user.phone).toBe('01000000000');
   });
 
+  it('returns verified student profiles to authenticated students and admins only', async () => {
+    const [student, requester, admin, unverifiedStudent] = await Promise.all([
+      prisma.user.create({
+        data: {
+          name: 'Visible student',
+          email: 'visible@example.com',
+          phone: '01000000000',
+          contactInfo: { telegram: '@visible' },
+          passwordHash: await hashPassword(password),
+          emailVerified: true,
+        },
+      }),
+      prisma.user.create({
+        data: {
+          name: 'Student requester',
+          email: 'requester@example.com',
+          passwordHash: await hashPassword(password),
+          emailVerified: true,
+        },
+      }),
+      prisma.user.create({
+        data: {
+          name: 'Admin requester',
+          email: 'admin@example.com',
+          passwordHash: await hashPassword(password),
+          emailVerified: true,
+          role: 'ADMIN',
+        },
+      }),
+      prisma.user.create({
+        data: {
+          name: 'Unverified student',
+          email: 'unverified@example.com',
+          passwordHash: await hashPassword(password),
+        },
+      }),
+    ]);
+
+    const [studentLogin, adminLogin] = await Promise.all([
+      api<{ accessToken: string }>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email: requester.email, password }),
+      }),
+      api<{ accessToken: string }>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email: admin.email, password }),
+      }),
+    ]);
+    const studentHeaders = { authorization: `Bearer ${studentLogin.body.accessToken}` };
+    const adminHeaders = { authorization: `Bearer ${adminLogin.body.accessToken}` };
+
+    const unauthenticated = await api<{ error: string }>(`/public/user/${student.id.toString()}`);
+    expect(unauthenticated.status).toBe(401);
+    expect(unauthenticated.body.error).toBe('UNAUTHENTICATED');
+
+    const response = await api<{ user: Record<string, unknown> }>(
+      `/public/user/${student.id.toString()}`,
+      { headers: studentHeaders },
+    );
+    expect(response.status).toBe(200);
+    expect(response.body.user).toEqual({
+      id: student.id.toString(),
+      name: 'Visible student',
+      email: 'visible@example.com',
+      phone: '01000000000',
+      contactInfo: { telegram: '@visible' },
+      avatar: null,
+    });
+
+    const adminResponse = await api<{ user: Record<string, unknown> }>(
+      `/public/user/${student.id.toString()}`,
+      { headers: adminHeaders },
+    );
+    expect(adminResponse.status).toBe(200);
+    expect(adminResponse.body.user).toEqual(response.body.user);
+
+    const hiddenAdmin = await api<{ error: string }>(`/public/user/${admin.id.toString()}`, {
+      headers: studentHeaders,
+    });
+    expect(hiddenAdmin.status).toBe(404);
+    expect(hiddenAdmin.body.error).toBe('USER_NOT_FOUND');
+
+    const hiddenUnverified = await api<{ error: string }>(
+      `/public/user/${unverifiedStudent.id.toString()}`,
+      { headers: adminHeaders },
+    );
+    expect(hiddenUnverified.status).toBe(404);
+    expect(hiddenUnverified.body.error).toBe('USER_NOT_FOUND');
+
+    const missing = await api<{ error: string }>('/public/user/999999', {
+      headers: studentHeaders,
+    });
+    expect(missing.status).toBe(404);
+    expect(missing.body.error).toBe('USER_NOT_FOUND');
+  });
+
   it('allows concurrent email claims without creating an account', async () => {
     const body = JSON.stringify({
       name: 'Student',

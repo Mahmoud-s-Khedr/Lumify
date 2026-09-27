@@ -8,6 +8,13 @@ export function findUserWithAvatar(userId: bigint) {
   return prisma.user.findUnique({ where: { id: userId }, include: userInclude });
 }
 
+export function findDiscoverableStudentWithAvatar(userId: bigint) {
+  return prisma.user.findFirst({
+    where: { id: userId, role: 'STUDENT', emailVerified: true },
+    include: userInclude,
+  });
+}
+
 export function findOwnedProfileAvatar(fileId: bigint, userId: bigint) {
   return prisma.file.findFirst({
     where: {

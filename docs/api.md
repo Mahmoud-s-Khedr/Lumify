@@ -45,6 +45,7 @@ representations are `GET /docs/json` and `GET /docs/yaml`.
 
 | Method | Path | Access | Body / purpose |
 | --- | --- | --- | --- |
+| GET | `/public/user/:id` | Authenticated | Get a verified student's shared profile: `id`, `name`, `email`, `phone`, `contactInfo`, and `avatar`. Available to authenticated students and admins; administrator and unverified accounts are never returned. |
 | GET | `/users/me` | Authenticated | Get the current user profile. |
 | PATCH | `/users/me` | Authenticated | Update one or more of `{ name?, phone?, contactInfo?, avatarFileId? }`; `phone`, `contactInfo`, and `avatarFileId` may be `null`. An avatar file must first be uploaded by the current user. |
 

@@ -87,6 +87,17 @@ export const openapiComponents = {
         'updatedAt',
       ],
     ),
+    PublicUser: object(
+      {
+        id: { type: 'string', pattern: '^\\d+$' },
+        name: { type: 'string' },
+        email: { type: 'string', format: 'email' },
+        phone: nullable({ type: 'string' }),
+        contactInfo: nullable({}),
+        avatar: nullable(ref('File')),
+      },
+      ['id', 'name', 'email', 'phone', 'contactInfo', 'avatar'],
+    ),
     AuthUser: object(
       {
         id: { type: 'string', pattern: '^\\d+$' },
@@ -546,6 +557,9 @@ const operationResponses: Record<string, Record<string, Response>> = {
   'POST /auth/reset-password': { 204: response('Password reset.') },
   'POST /auth/verify-reset-code': { 204: response('Password-reset code is valid.') },
   'POST /auth/change-password': { 204: response('Password changed and refresh cookie cleared.') },
+  'GET /public/user/:id': {
+    200: response('Verified student shared profile.', wrapped('user', ref('PublicUser'))),
+  },
   'GET /users/me': { 200: response('Current profile.', wrapped('user', ref('User'))) },
   'PATCH /users/me': { 200: response('Updated profile.', wrapped('user', ref('User'))) },
   'GET /payment-methods': {
