@@ -13,7 +13,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Users'],
-        summary: 'Get a shared student profile',
+        summary: 'Get a shared verified-user profile',
         params: zodSchema(publicUserParamsSchema),
       },
     },

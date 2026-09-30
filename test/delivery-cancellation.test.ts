@@ -279,6 +279,38 @@ describe('Phase 6 and 7 course-delivery and cancellation journeys', () => {
       cancellationReason: 'My schedule changed.',
     });
 
+    const rejected = await api<{
+      booking: { status: string; adminNote: string; cancelledAt: string | null };
+    }>(`/admin/bookings/${booking.id.toString()}/cancellation/complete`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({ decision: 'REJECT', adminNote: 'The refund request was declined.' }),
+    });
+    expect(rejected.status).toBe(200);
+    expect(rejected.body.booking).toMatchObject({
+      status: 'CONFIRMED',
+      adminNote: 'The refund request was declined.',
+      cancelledAt: null,
+    });
+
+    const queueAfterRejection = await api<{ bookings: Array<{ id: string }> }>(
+      '/admin/cancellations',
+      { headers: adminHeaders },
+    );
+    expect(queueAfterRejection.status).toBe(200);
+    expect(queueAfterRejection.body.bookings).toHaveLength(0);
+
+    const requestedAgain = await api<{ booking: { status: string } }>(
+      `/bookings/${booking.id.toString()}/cancellation`,
+      {
+        method: 'POST',
+        headers: studentHeaders,
+        body: JSON.stringify({ reason: 'My schedule still changed.' }),
+      },
+    );
+    expect(requestedAgain.status).toBe(200);
+    expect(requestedAgain.body.booking.status).toBe('CANCELLATION_REQUESTED');
+
     const completed = await api<{
       booking: { status: string; adminNote: string; cancelledAt: string };
     }>(`/admin/bookings/${booking.id.toString()}/cancellation/complete`, {

@@ -95,7 +95,7 @@ describe('Phase 2 authentication and configuration journeys', () => {
     expect(verification.body.user.phone).toBe('01000000000');
   });
 
-  it('returns verified student profiles to authenticated students and admins only', async () => {
+  it('returns verified student and admin profiles to authenticated users', async () => {
     const [student, requester, admin, unverifiedStudent] = await Promise.all([
       prisma.user.create({
         data: {
@@ -171,11 +171,21 @@ describe('Phase 2 authentication and configuration journeys', () => {
     expect(adminResponse.status).toBe(200);
     expect(adminResponse.body.user).toEqual(response.body.user);
 
-    const hiddenAdmin = await api<{ error: string }>(`/public/user/${admin.id.toString()}`, {
-      headers: studentHeaders,
+    const adminProfile = await api<{ user: Record<string, unknown> }>(
+      `/public/user/${admin.id.toString()}`,
+      {
+        headers: studentHeaders,
+      },
+    );
+    expect(adminProfile.status).toBe(200);
+    expect(adminProfile.body.user).toEqual({
+      id: admin.id.toString(),
+      name: 'Admin requester',
+      email: 'admin@example.com',
+      phone: null,
+      contactInfo: null,
+      avatar: null,
     });
-    expect(hiddenAdmin.status).toBe(404);
-    expect(hiddenAdmin.body.error).toBe('USER_NOT_FOUND');
 
     const hiddenUnverified = await api<{ error: string }>(
       `/public/user/${unverifiedStudent.id.toString()}`,

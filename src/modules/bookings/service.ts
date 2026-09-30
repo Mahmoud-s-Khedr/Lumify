@@ -309,6 +309,7 @@ export async function listCancellationRequests() {
 
 export async function completeBookingCancellation(
   bookingId: bigint,
+  decision: 'COMPLETE' | 'REJECT',
   adminNote?: string,
 ): Promise<{ booking: BookingWithDetails; confirmedBooked: number }> {
   return prisma.$transaction(async (tx) => {
@@ -317,15 +318,20 @@ export async function completeBookingCancellation(
     `;
     const current = await tx.booking.findUnique({ where: { id: bookingId } });
     if (!current) throw new AppError(404, 'Booking was not found.', 'BOOKING_NOT_FOUND');
-    if (!canTransitionBooking(current.status, 'CANCELLED'))
+    const nextStatus = decision === 'COMPLETE' ? 'CANCELLED' : 'CONFIRMED';
+    if (!canTransitionBooking(current.status, nextStatus))
       throw new AppError(
         409,
-        'Only a pending cancellation request can be completed.',
+        'Only a pending cancellation request can be completed or rejected.',
         'INVALID_BOOKING_TRANSITION',
       );
     const booking = await tx.booking.update({
       where: { id: bookingId },
-      data: { status: 'CANCELLED', adminNote: adminNote || null, cancelledAt: new Date() },
+      data: {
+        status: nextStatus,
+        adminNote: adminNote || null,
+        cancelledAt: nextStatus === 'CANCELLED' ? new Date() : null,
+      },
       include: bookingInclude,
     });
     const confirmedBooked = await tx.booking.count({

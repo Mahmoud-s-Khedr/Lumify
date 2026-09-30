@@ -45,7 +45,7 @@ representations are `GET /docs/json` and `GET /docs/yaml`.
 
 | Method | Path | Access | Body / purpose |
 | --- | --- | --- | --- |
-| GET | `/public/user/:id` | Authenticated | Get a verified student's shared profile: `id`, `name`, `email`, `phone`, `contactInfo`, and `avatar`. Available to authenticated students and admins; administrator and unverified accounts are never returned. |
+| GET | `/public/user/:id` | Authenticated | Get a verified user's shared profile: `id`, `name`, `email`, `phone`, `contactInfo`, and `avatar`. Available to authenticated students and admins; unverified accounts are never returned. |
 | GET | `/users/me` | Authenticated | Get the current user profile. |
 | PATCH | `/users/me` | Authenticated | Update one or more of `{ name?, phone?, contactInfo?, avatarFileId? }`; `phone`, `contactInfo`, and `avatarFileId` may be `null`. An avatar file must first be uploaded by the current user. |
 
@@ -207,7 +207,7 @@ students. Archived communities are fully read-only: both sending and deleting me
 | POST | `/admin/bookings/:id/reject` | Admin | Reject a pending payment review. Optional body `{ adminNote? }`. |
 | POST | `/bookings/:id/cancellation` | Student owner | Cancel a pending booking immediately, or request cancellation of a confirmed booking that is upcoming or has fewer than two sessions in progress: `{ reason }`. |
 | GET | `/admin/cancellations` | Admin | List cancellation requests awaiting external refund. |
-| POST | `/admin/bookings/:id/cancellation/complete` | Admin | Mark an externally refunded cancellation complete. Optional body `{ adminNote? }`. |
+| POST | `/admin/bookings/:id/cancellation/complete` | Admin | Resolve a cancellation request. Body `{ decision?: COMPLETE\|REJECT, adminNote? }`; `COMPLETE` is the default and marks an externally refunded booking `CANCELLED`, while `REJECT` restores it to `CONFIRMED`. |
 
 ## Booking states
 

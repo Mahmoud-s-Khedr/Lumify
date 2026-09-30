@@ -8,9 +8,9 @@ export function findUserWithAvatar(userId: bigint) {
   return prisma.user.findUnique({ where: { id: userId }, include: userInclude });
 }
 
-export function findDiscoverableStudentWithAvatar(userId: bigint) {
+export function findDiscoverableUserWithAvatar(userId: bigint) {
   return prisma.user.findFirst({
-    where: { id: userId, role: 'STUDENT', emailVerified: true },
+    where: { id: userId, emailVerified: true },
     include: userInclude,
   });
 }

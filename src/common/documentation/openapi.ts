@@ -685,7 +685,7 @@ const operationResponses: Record<string, Record<string, Response>> = {
     200: response('Cancellation requests.', list('bookings', ref('Booking'))),
   },
   'POST /admin/bookings/:id/cancellation/complete': {
-    200: response('Cancellation completed.', wrapped('booking', ref('Booking'))),
+    200: response('Cancellation resolved.', wrapped('booking', ref('Booking'))),
   },
   'PATCH /admin/rounds/:id/join': {
     200: response('Join details updated.', wrapped('join', ref('JoinDetails'))),
@@ -754,6 +754,12 @@ const publicOperations = new Set([
   'GET /courses/:courseId/rounds',
 ]);
 const refreshCookieOperations = new Set(['POST /auth/refresh', 'POST /auth/logout']);
+// These operations are public in their default form, but accept an option that
+// exposes privileged data. OpenAPI cannot express authentication conditional on
+// a query parameter, so list both alternatives: unauthenticated access and
+// bearer authentication. Swagger UI will then include a configured bearer token
+// when the privileged option is exercised.
+const optionallyAuthenticatedOperations = new Set(['GET /courses/:courseId/rounds']);
 const studentOnlyOperations = new Set([
   'POST /rounds/:id/bookings',
   'POST /bookings/:id/payment',
@@ -830,7 +836,10 @@ export function documentRoute(
         ),
       ),
     };
-  if (!publicOperations.has(key))
+  if (optionallyAuthenticatedOperations.has(key)) {
+    documented.security = [{ bearerAuth: [] }, {}];
+    documented.description = `${documented.description ? `${documented.description}\n\n` : ''}Public by default. Set \`includeUnavailable=true\` only with an ADMIN access token; use Swagger UI's **Authorize** control before executing that request.`;
+  } else if (!publicOperations.has(key))
     documented.security = refreshCookieOperations.has(key)
       ? [{ refreshCookie: [] }]
       : [{ bearerAuth: [] }];

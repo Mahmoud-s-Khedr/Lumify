@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import { AppError } from '../../common/errors/app-error.js';
 import {
-  findDiscoverableStudentWithAvatar,
+  findDiscoverableUserWithAvatar,
   findOwnedProfileAvatar,
   findUserWithAvatar,
   updateUserProfile,
@@ -19,7 +19,7 @@ export async function findCurrentUser(userId: bigint): Promise<UserWithAvatar> {
 }
 
 export async function findPublicUser(userId: bigint): Promise<UserWithAvatar> {
-  const user = await findDiscoverableStudentWithAvatar(userId);
+  const user = await findDiscoverableUserWithAvatar(userId);
   if (!user) throw new AppError(404, 'User was not found.', 'USER_NOT_FOUND');
   return user;
 }

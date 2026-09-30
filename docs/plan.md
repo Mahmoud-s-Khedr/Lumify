@@ -675,12 +675,8 @@ Implement:
 CONFIRMED
     ↓
 CANCELLATION_REQUESTED
-    ↓
-Admin reviews
-    ↓
-Admin manually refunds externally
-    ↓
-CANCELLED
+    ├── Admin rejects ──> CONFIRMED
+    └── Admin manually refunds externally ──> CANCELLED
 ```
 
 Store:
@@ -696,7 +692,8 @@ Admin can list cancellation requests with the student profile, course, round, an
 ### Completion record
 
 Implemented confirmed-booking cancellation requests with a required reason, an administrator
-cancellation queue, and completion after the external refund with an admin note and timestamp.
+cancellation queue, rejection back to `CONFIRMED`, and completion after the external refund with
+an admin note and timestamp.
 Protected access remains active during review and is removed at `CANCELLED`. The workflow uses
 row-locked booking transitions and has complete HTTP journey coverage.
 

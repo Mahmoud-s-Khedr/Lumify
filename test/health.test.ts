@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { api } from './http.js';
 
-type OpenApiOperation = { requestBody?: unknown };
+type OpenApiOperation = {
+  requestBody?: unknown;
+  description?: string;
+  parameters?: Array<{ name?: string; schema?: unknown }>;
+  security?: Array<Record<string, string[]>>;
+};
 type OpenApiPath = { get?: OpenApiOperation; post?: OpenApiOperation; patch?: OpenApiOperation };
 
 describe('running backend health and docs', () => {
@@ -68,6 +73,13 @@ describe('running backend health and docs', () => {
           },
         },
       },
+    });
+    expect(openapi.body.paths['/courses/{courseId}/rounds']?.get).toMatchObject({
+      description: expect.stringContaining('includeUnavailable=true'),
+      parameters: expect.arrayContaining([
+        { name: 'includeUnavailable', schema: { type: 'string', enum: ['true'] } },
+      ]),
+      security: [{ bearerAuth: [] }, {}],
     });
   });
 });

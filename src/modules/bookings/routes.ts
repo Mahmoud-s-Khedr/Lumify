@@ -8,6 +8,7 @@ import { publicBooking } from './presenter.js';
 import {
   adminListQuerySchema,
   bookingParamsSchema,
+  cancellationResolutionSchema,
   cancellationSchema,
   reviewSchema,
   roundParamsSchema,
@@ -216,18 +217,22 @@ export async function bookingRoutes(app: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Cancellations'],
-        summary: 'Record an externally refunded cancellation as complete',
+        summary: 'Complete or reject a cancellation request',
         description:
-          'Lumify records the outcome only; the administrator must complete the refund outside the platform first.',
+          'Use decision COMPLETE (the default) after an external refund, or REJECT to restore the booking to CONFIRMED. Lumify records the outcome only; refunds are completed outside the platform.',
         params: zodSchema(bookingParamsSchema),
-        body: zodSchema(reviewSchema),
+        body: zodSchema(cancellationResolutionSchema),
       },
     },
     async (request) => {
       await requireAdmin(request);
       const params = parseRequest(bookingParamsSchema, request.params);
-      const body = parseRequest(reviewSchema, request.body ?? {});
-      const result = await completeBookingCancellation(BigInt(params.id), body.adminNote);
+      const body = parseRequest(cancellationResolutionSchema, request.body ?? {});
+      const result = await completeBookingCancellation(
+        BigInt(params.id),
+        body.decision ?? 'COMPLETE',
+        body.adminNote,
+      );
       return { booking: publicBooking(result.booking, result.confirmedBooked) };
     },
   );

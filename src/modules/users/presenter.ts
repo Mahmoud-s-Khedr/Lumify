@@ -29,7 +29,7 @@ export function publicUser(user: UserWithAvatar) {
   };
 }
 
-/** The limited profile shared with authenticated students and administrators. */
+/** The limited profile of a verified user shared with authenticated users. */
 export function publicProfile(user: UserWithAvatar) {
   return {
     id: user.id.toString(),

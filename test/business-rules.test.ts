@@ -54,6 +54,7 @@ describe('booking and course-delivery business rules', () => {
     expect(canTransitionBooking('PENDING_REVIEW', 'CANCELLED')).toBe(true);
     expect(canTransitionBooking('PAYMENT_REJECTED', 'PENDING_REVIEW')).toBe(true);
     expect(canTransitionBooking('CONFIRMED', 'CANCELLATION_REQUESTED')).toBe(true);
+    expect(canTransitionBooking('CANCELLATION_REQUESTED', 'CONFIRMED')).toBe(true);
     expect(canTransitionBooking('CANCELLATION_REQUESTED', 'CANCELLED')).toBe(true);
     expect(canTransitionBooking('CANCELLED', 'CONFIRMED')).toBe(false);
     expect(canTransitionBooking('PENDING_PAYMENT', 'CONFIRMED')).toBe(false);

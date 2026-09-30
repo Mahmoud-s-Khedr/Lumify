@@ -22,6 +22,10 @@ export const submitPaymentSchema = z.object({
   transactionReference: z.string().trim().min(1).max(500).nullable().optional(),
 });
 export const reviewSchema = z.object({ adminNote: z.string().trim().max(2_000).optional() });
+export const cancellationResolutionSchema = z.object({
+  decision: z.enum(['COMPLETE', 'REJECT']).default('COMPLETE'),
+  adminNote: z.string().trim().max(2_000).optional(),
+});
 export const cancellationSchema = z.object({
   reason: z.string().trim().min(1).max(2_000),
 });

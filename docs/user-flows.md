@@ -447,7 +447,8 @@ Admin can:
 
 The cancellation queue includes the student profile, course, round, original booking, and reason.
 The student retains protected course access while the request is pending. Completion records the
-admin note and cancellation timestamp and removes that access; Lumify never performs the refund.
+admin note and cancellation timestamp and removes that access. An admin can instead reject the
+request, which restores `CONFIRMED`; Lumify never performs the refund.
 
 State:
 
@@ -455,8 +456,8 @@ State:
 CONFIRMED
     ↓
 CANCELLATION_REQUESTED
-    ↓
-CANCELLED
+    ├── reject ──> CONFIRMED
+    └── complete ──> CANCELLED
 ```
 
 Cancellation/refund handling is marked desirable in the SRS. 
