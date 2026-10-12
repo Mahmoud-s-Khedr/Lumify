@@ -138,9 +138,8 @@ function matchesSearch(course: CourseWithImages, query: string): boolean {
 }
 
 export async function listCourses(query: ListCoursesQuery) {
-  const wantsArchived = query.archived === 'true';
   const courses = await prisma.course.findMany({
-    where: { archived: wantsArchived },
+    where: query.archived === 'null' ? {} : { archived: query.archived === 'true' },
     include: courseInclude,
     orderBy: { createdAt: 'desc' },
   });

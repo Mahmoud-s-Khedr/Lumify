@@ -120,7 +120,7 @@ includes every enrollment state; use `status=CONFIRMED` for the active class ros
 
 | Method | Path | Access | Body / purpose |
 | --- | --- | --- | --- |
-| GET | `/courses` | Public; Admin when `archived` is supplied | List active courses. Query: `q?`, `page?` (default `1`), `pageSize?` (default `20`, max `100`), `minRating?` (1–5), `sort=rating_desc\|rating_asc`, and `archived=true\|false` (admin only). Course results include approved-review `averageRating` (or `null`) and `reviewCount`. |
+| GET | `/courses` | Public; Admin when `archived=true` or `archived=null` | List published courses by default. Query: `q?`, `page?` (default `1`), `pageSize?` (default `20`, max `100`), `minRating?` (1–5), `sort=rating_desc\|rating_asc`, and `archived=true\|false\|null`. `true` returns archived courses (admin only); `false` or omitted returns published courses (public); the literal query value `null` returns all courses (admin only). Course results include approved-review `averageRating` (or `null`) and `reviewCount`. |
 | GET | `/courses/:id` | Public for active courses; Admin for archived | Get course details, including approved-review rating summary. |
 | POST | `/courses` | Admin | Create a course. Required: `{ title, price }`; optional: `description`, `outcomes`, `skills`, `prerequisiteSkills`, `prerequisiteCourseIds`, `demoVideoUrl`, `imageFileIds`. `prerequisiteCourseIds` is an array of course IDs and replaces the full prerequisite set when supplied to `PATCH /courses/:id`. |
 | PATCH | `/courses/:id` | Admin | Update one or more create fields, plus `archived`. |

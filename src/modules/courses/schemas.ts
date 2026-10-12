@@ -24,7 +24,7 @@ export const listCoursesSchema = z.object({
   q: z.string().trim().min(1).max(255).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  archived: z.enum(['true', 'false']).optional(),
+  archived: z.enum(['true', 'false', 'null']).optional(),
   minRating: z.coerce.number().min(1).max(5).optional(),
   sort: z.enum(['rating_desc', 'rating_asc']).optional(),
 });

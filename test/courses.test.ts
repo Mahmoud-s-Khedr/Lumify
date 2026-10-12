@@ -129,6 +129,85 @@ describe('Phase 3 file and course journeys', () => {
     expect(adminArchivedList.body.courses).toHaveLength(1);
   });
 
+  it('filters published, archived, and all courses with the required access', async () => {
+    const passwordHash = await hashPassword(password);
+    const admin = await prisma.user.create({
+      data: {
+        name: 'Admin',
+        email: 'admin@example.com',
+        passwordHash,
+        emailVerified: true,
+        role: 'ADMIN',
+      },
+    });
+    const student = await prisma.user.create({
+      data: {
+        name: 'Student',
+        email: 'student@example.com',
+        passwordHash,
+        emailVerified: true,
+      },
+    });
+    const adminLogin = await api<{ accessToken: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: admin.email, password }),
+    });
+    const studentLogin = await api<{ accessToken: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: student.email, password }),
+    });
+    const published = await prisma.course.create({ data: { title: 'Published', price: 1 } });
+    const archived = await prisma.course.create({
+      data: { title: 'Archived', price: 1, archived: true },
+    });
+    type CourseList = {
+      courses: Array<{ id: string }>;
+      pagination: { page: number; pageSize: number; total: number };
+    };
+    const adminHeaders = { authorization: `Bearer ${adminLogin.body.accessToken}` };
+    const studentHeaders = { authorization: `Bearer ${studentLogin.body.accessToken}` };
+
+    for (const query of ['', '?archived=false']) {
+      for (const headers of [undefined, studentHeaders, adminHeaders]) {
+        const response = await api<CourseList>(`/courses${query}`, { headers });
+        expect(response.status).toBe(200);
+        expect(response.body.courses.map((course) => course.id)).toEqual([published.id.toString()]);
+        expect(response.body.pagination.total).toBe(1);
+      }
+    }
+    for (const filter of ['true', 'null']) {
+      const anonymous = await api(`/courses?archived=${filter}`);
+      expect(anonymous.status).toBe(401);
+      const studentResponse = await api(`/courses?archived=${filter}`, {
+        headers: studentHeaders,
+      });
+      expect(studentResponse.status).toBe(403);
+      const response = await api<CourseList>(`/courses?archived=${filter}`, {
+        headers: adminHeaders,
+      });
+      expect(response.status).toBe(200);
+      const expectedIds =
+        filter === 'true'
+          ? [archived.id.toString()]
+          : [published.id.toString(), archived.id.toString()];
+      expect(response.body.courses.map((course) => course.id).sort()).toEqual(expectedIds.sort());
+      expect(response.body.pagination.total).toBe(expectedIds.length);
+    }
+    const paginated = await api<CourseList>('/courses?archived=null&page=2&pageSize=1', {
+      headers: adminHeaders,
+    });
+    expect(paginated.status).toBe(200);
+    expect(paginated.body.courses).toHaveLength(1);
+    expect(paginated.body.pagination).toEqual({ page: 2, pageSize: 1, total: 2 });
+    const searched = await api<CourseList>('/courses?archived=null&q=archived', {
+      headers: adminHeaders,
+    });
+    expect(searched.status).toBe(200);
+    expect(searched.body.courses.map((course) => course.id)).toEqual([archived.id.toString()]);
+    const invalid = await api('/courses?archived=invalid', { headers: adminHeaders });
+    expect(invalid.status).toBe(400);
+  });
+
   it('stores multiple prerequisite courses and rejects prerequisite cycles', async () => {
     const admin = await prisma.user.create({
       data: {

@@ -28,12 +28,14 @@ export async function courseRoutes(app: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Courses'],
         summary: 'List courses in the catalogue',
+        description:
+          'archived=false or omitted lists published courses publicly. archived=true lists archived courses and archived=null lists all courses; both require administrator access.',
         querystring: zodSchema(listCoursesSchema),
       },
     },
     async (request) => {
       const query = parseRequest(listCoursesSchema, request.query);
-      if (query.archived !== undefined) await requireAdmin(request);
+      if (query.archived === 'true' || query.archived === 'null') await requireAdmin(request);
       const result = await listCourses({
         ...query,
         page: query.page ?? 1,
